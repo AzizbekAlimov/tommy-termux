@@ -38,7 +38,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📚 TERMUX UCHUN 45 ta video darslik tayyor"
     )
     keyboard = [
-        [InlineKeyboardButton("📽️ Video darsliklarni koʻrish", callback_data="page_1")],
+        # BU YERDA TUGMA NOMI O'ZGARTIRILDI
+        [InlineKeyboardButton("📽️ TERMUX VIDEO DARSLIKLAR", callback_data="page_1")],
         [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
     ]
     await update.message.reply_text(info_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -108,7 +109,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📚 TERMUX UCHUN 45 ta video darslik tayyor"
         )
         keyboard = [
-            [InlineKeyboardButton("📽️ Video darsliklarni koʻrish", callback_data="page_1")],
+            # BU YERDA HAM TUGMA NOMI O'ZGARTIRILDI
+            [InlineKeyboardButton("📽️ TERMUX VIDEO DARSLIKLAR", callback_data="page_1")],
             [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
         ]
         try:
