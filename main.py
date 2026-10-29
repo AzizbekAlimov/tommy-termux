@@ -32,7 +32,7 @@ LESSONS = {
     41: 43, 42: 44, 43: 45, 44: 46, 45: 47
 }
 
-# Yangi Lua darsliklari (Siz bergan linklar asosida)
+# Yangi Lua darsliklari
 LUA_LESSONS = {
     1: 93, 
     2: 94, 
@@ -43,8 +43,8 @@ LUA_LESSONS = {
     7: 101
 }
 
-# "PYTHON OLISH" tugmasi uchun maxsus videolar
-PYTHON_EXTRA_VIDEOS = [95, 96]
+# "PYTHON OLISH" tugmasi uchun videolar (95 olib tashlandi)
+PYTHON_EXTRA_VIDEOS = [96]
 
 # /start buyrug'i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,7 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text(info_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# Asosiy darsliklar menyusi (Sahifalash)
+# Asosiy darsliklar menyusi
 def get_lessons_keyboard(page=1):
     keyboard = []
     start_idx = (page - 1) * 10 + 1
@@ -82,7 +82,7 @@ def get_lessons_keyboard(page=1):
 def get_lua_lessons_keyboard():
     keyboard = []
     row = []
-    for i in range(1, 8): # 7 ta video
+    for i in range(1, 8):
         row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lua_lesson_{i}"))
         if len(row) == 2:
             keyboard.append(row); row = []
@@ -91,16 +91,14 @@ def get_lua_lessons_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-# Tugmalar bosilganda ishlaydigan asosiy funksiya
+# Tugmalar bosilganda
 async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
     chat_id = query.message.chat_id
     
-    # ==========================================
-    # 1. ASOSIY DARSLIKLAR (Termux)
-    # ==========================================
+    # 1. ASOSIY DARSLIKLAR
     if data.startswith("page_"):
         page = int(data.split("_")[1])
         text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
@@ -112,20 +110,14 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS[lesson_num]
-        
-        video_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📚 Darsliklar (Menyu)", callback_data="page_1")]
-        ])
-        
+        video_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📚 Darsliklar (Menyu)", callback_data="page_1")]])
         try:
             await context.bot.copy_message(chat_id=chat_id, from_chat_id=CHANNEL_USERNAME, message_id=message_id, reply_markup=video_keyboard)
             await query.message.delete()
         except TelegramError:
             await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Videoni yuklab bo'lmadi.", parse_mode='Markdown')
 
-    # ==========================================
-    # 2. LUA DARSLIKLARI (Yangi)
-    # ==========================================
+    # 2. LUA DARSLIKLARI
     elif data == "lua_page_1":
         text = "📚 **TERMUX LUA PAK DARSLIKLARI**\n\nKerakli darslikni tanlang:"
         try:
@@ -136,11 +128,9 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("lua_lesson_"):
         lesson_num = int(data.split("_")[2])
         message_id = LUA_LESSONS[lesson_num]
-        
-        # Tugmalar ro'yxatini tayyorlaymiz
         buttons = []
         
-        # Agar foydalanuvchi 2-darslikni bosgan bo'lsa, "PYTHON OLISH" tugmasini qo'shamiz
+        # 2-darslik bo'lsa "PYTHON OLISH" tugmasini qo'shamiz
         if lesson_num == 2:
             buttons.append([InlineKeyboardButton("🐍 PYTHON OLISH", callback_data="python_extra")])
             
@@ -153,25 +143,22 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError:
             await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Videoni yuklab bo'lmadi.", parse_mode='Markdown')
 
-    # ==========================================
-    # 3. PYTHON MAXSUS VIDEOLARI (Faqat 2-darslik ostidan chiqadi)
-    # ==========================================
+    # 3. PYTHON MAXSUS VIDEOLARI
     elif data == "python_extra":
         try:
-            # 95 va 96-videolarni ketma-ket tashlaymiz
+            # Faqat 96-videoni tashlaymiz
             for v_id in PYTHON_EXTRA_VIDEOS:
                 await context.bot.copy_message(chat_id=chat_id, from_chat_id=CHANNEL_USERNAME, message_id=v_id)
             
-            # Xabar oxirida qaytish tugmasi
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Lua darsliklariga qaytish", callback_data="lua_page_1")]])
-            await context.bot.send_message(chat_id=chat_id, text="Mana siz so'ragan Python darsliklari! ✅", reply_markup=back_kb)
+            await context.bot.send_message(chat_id=chat_id, text="Mana siz so'ragan Python darsligi! ✅", reply_markup=back_kb)
             
         except TelegramError:
-            await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Python videolarini yuklab bo'lmadi.", parse_mode='Markdown')
+            # Agar video o'chirilgan yoki bot ko'chira olmasa, shu xabar chiqadi
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga qaytish", callback_data="lua_page_1")]])
+            await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Python videosini yuklab bo'lmadi. U kanaldan o'chirilgan yoki botga ruxsat berilmagan bo'lishi mumkin.", reply_markup=back_kb)
         
-    # ==========================================
     # 4. BOSH MENYU
-    # ==========================================
     elif data == "back_to_start":
         info_text = (
             "👋 **Assalomu alaykum!**\n\n"
