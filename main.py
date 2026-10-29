@@ -45,8 +45,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📚 **45 ta video darslik** tayyor. Ko'rish uchun pastdagi tugmani bosing:"
     )
     keyboard = [
-        [InlineKeyboardButton("🎥 Videodarsliklarni ko'rish", callback_data="page_1")],
-        [InlineKeyboardButton("📢 Bizning kanal", url="https://t.me/termux_tutoril")]
+        [InlineKeyboardButton("📽️ Video darsliklarni koʻrish", callback_data="page_1")],
+        [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
     ]
     await update.message.reply_text(info_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
@@ -56,7 +56,8 @@ def get_lessons_keyboard(page=1):
     end_idx = min(page * 10, 45)
     row = []
     for i in range(start_idx, end_idx + 1):
-        row.append(InlineKeyboardButton(f"🎬 {i}-darslik", url=LESSONS[i]))
+        # BU YERDA url O'RNIGA callback_data ISHLATILDI
+        row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lesson_{i}"))
         if len(row) == 2:
             keyboard.append(row); row = []
     if row: keyboard.append(row)
@@ -70,12 +71,48 @@ def get_lessons_keyboard(page=1):
 async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data.startswith("page_"):
-        page = int(query.data.split("_")[1])
-        text = f"📚 **Videodarsliklar**\n\nSahifa: {page} / 5"
+    data = query.data
+    
+    # Sahifalarni almashtirish
+    if data.startswith("page_"):
+        page = int(data.split("_")[1])
+        text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
         await query.edit_message_text(text=text, reply_markup=get_lessons_keyboard(page), parse_mode='Markdown')
-    elif query.data == "back_to_start":
-        await start(update, context)
+        
+    # Darslik tanlanganda
+    elif data.startswith("lesson_"):
+        lesson_num = int(data.split("_")[1])
+        link = LESSONS[lesson_num]
+        
+        # 1. Bot chatiga darslik havolasini yuborish
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"🎬 **{lesson_num}-darslik**\n\n👉 [Videoni ko'rish uchun shu yerni bosing]({link})",
+            parse_mode='Markdown'
+        )
+        
+        # 2. Qaysi sahifada turgan bo'lsa, o'sha sahifadagi menyuni qaytadan ochish
+        page = ((lesson_num - 1) // 10) + 1
+        text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=text,
+            reply_markup=get_lessons_keyboard(page),
+            parse_mode='Markdown'
+        )
+        
+    # Bosh menyuga qaytish
+    elif data == "back_to_start":
+        info_text = (
+            "👋 **Assalomu alaykum!**\n\n"
+            "Men **Termux va Dasturlash** bo'yicha yordamchi botman.\n\n"
+            "📚 **45 ta video darslik** tayyor. Ko'rish uchun pastdagi tugmani bosing:"
+        )
+        keyboard = [
+            [InlineKeyboardButton("📽️ Video darsliklarni koʻrish", callback_data="page_1")],
+            [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
+        ]
+        await query.edit_message_text(text=info_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # Telegram Application-ni yaratish
 application = Application.builder().token(TOKEN).build()
@@ -89,11 +126,10 @@ app = FastAPI()
 
 @app.on_event("startup")
 async def on_startup():
-    # Botni ishga tushirish va Webhookni xavfsiz ulash
     await application.initialize()
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Webhook muvaffaqiyatli o'rnatildi: {RENDER_EXTERNAL_URL}/webhook/***")
+    print(f"✅ Webhook muvaffaqiyatli o'rnatildi.")
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -101,7 +137,6 @@ async def on_shutdown():
 
 @app.post(f"/webhook/{TOKEN}")
 async def telegram_webhook(request: Request):
-    # Telegramdan kelgan xabarni qabul qilish
     data = await request.json()
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
