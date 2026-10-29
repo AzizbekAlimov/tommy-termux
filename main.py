@@ -20,7 +20,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==========================================
 # VIDEOLAR MA'LUMOTLARI
-# Kanal nomi va xabar IDsi (havolaning oxiridagi raqam)
 # ==========================================
 CHANNEL_USERNAME = "@termux_tutoril" 
 LESSONS = {
@@ -36,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info_text = (
         "👋 **Assalomu alaykum!**\n\n"
         "Men **Termux va Dasturlash** bo'yicha yordamchi botman.\n\n"
-        "📚 **45 ta video darslik** tayyor. Ko'rish uchun pastdagi tugmani bosing:"
+        "📚 TERMUX UCHUN 45 ta video darslik tayyor"
     )
     keyboard = [
         [InlineKeyboardButton("📽️ Video darsliklarni koʻrish", callback_data="page_1")],
@@ -69,7 +68,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = query.message.chat_id
     
-    # Sahifalarni almashtirish
     if data.startswith("page_"):
         page = int(data.split("_")[1])
         text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
@@ -78,29 +76,24 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_lessons_keyboard(page), parse_mode='Markdown')
             
-    # Darslik tanlanganda (Videoni tashlash)
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS[lesson_num]
         
-        # Video tagida chiqadigan tugma
         video_keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📚 Darsliklar (Menyu)", callback_data="page_1")]
         ])
         
         try:
-            # 1. Videoni va uning ostidagi yozuvni nusxalab tashlaymiz
             await context.bot.copy_message(
                 chat_id=chat_id,
                 from_chat_id=CHANNEL_USERNAME,
                 message_id=message_id,
                 reply_markup=video_keyboard
             )
-            # 2. Videoni tashlagandan so'ng, tepadagi ro'yxatni (eski xabarni) o'chirib tashlaymiz
             await query.message.delete()
             
         except TelegramError:
-            # Agar bot admin bo'lmasa yoki video topilmasa
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"❌ **Xatolik!**\n\n{lesson_num}-darslikni yuklab bo'lmadi.\nSababi: Bot kanalda admin emas yoki video o'chirilgan.",
@@ -112,7 +105,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info_text = (
             "👋 **Assalomu alaykum!**\n\n"
             "Men **Termux va Dasturlash** bo'yicha yordamchi botman.\n\n"
-            "📚 **45 ta video darslik** tayyor. Ko'rish uchun pastdagi tugmani bosing:"
+            "📚 TERMUX UCHUN 45 ta video darslik tayyor"
         )
         keyboard = [
             [InlineKeyboardButton("📽️ Video darsliklarni koʻrish", callback_data="page_1")],
