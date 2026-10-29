@@ -21,13 +21,7 @@
             --border-color: rgba(255, 255, 255, 0.08);
         }
 
-        * { 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
-            -webkit-tap-highlight-color: transparent;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html { scroll-behavior: smooth; }
 
         body {
@@ -35,7 +29,6 @@
             color: var(--text-main);
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
-            /* Tepa va pastdagi qotib turuvchi menyular uchun joy */
             padding: 110px 16px 120px 16px; 
             display: flex;
             flex-direction: column;
@@ -44,10 +37,7 @@
             position: relative;
         }
 
-        [dir="rtl"] ul, [dir="rtl"] ol {
-            padding-left: 0;
-            padding-right: 20px;
-        }
+        [dir="rtl"] ul, [dir="rtl"] ol { padding-left: 0; padding-right: 20px; }
 
         /* ORQA FON */
         .modern-bg {
@@ -62,135 +52,85 @@
             background-size: 30px 30px;
         }
 
-        /* 1. TEPADAGI MENYU */
+        /* TEPADAGI MENYU */
         .top-fixed-wrapper {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
+            top: 0; left: 0; width: 100%;
             padding: 15px 16px 40px 16px;
             z-index: 99999;
             background: linear-gradient(to bottom, #050508 60%, rgba(5,5,8,0) 100%);
-            display: flex;
-            justify-content: center;
+            display: flex; justify-content: center;
             pointer-events: none; 
         }
 
         .top-bar {
-            width: 100%;
-            max-width: 600px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            width: 100%; max-width: 600px;
+            display: flex; justify-content: space-between; align-items: center;
             padding: 10px 16px;
             background: rgba(17, 17, 22, 0.95);
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
+            border-radius: 16px; border: 1px solid var(--border-color);
             box-shadow: 0 4px 20px rgba(0,0,0,0.6);
             pointer-events: auto;
         }
 
         .logo-text {
-            font-weight: 900;
-            font-size: 16px;
+            font-weight: 900; font-size: 16px;
             background: linear-gradient(90deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             letter-spacing: 0.5px;
         }
 
         .lang-group {
-            display: flex;
-            gap: 4px;
+            display: flex; gap: 4px;
             background: rgba(255, 255, 255, 0.03);
-            padding: 3px;
-            border-radius: 10px;
+            padding: 3px; border-radius: 10px;
             border: 1px solid rgba(255,255,255,0.05);
         }
 
         .lang-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            font-size: 11px;
-            font-weight: 700;
-            padding: 6px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            background: transparent; border: none;
+            color: var(--text-muted); font-size: 11px; font-weight: 700;
+            padding: 6px 10px; border-radius: 8px;
+            cursor: pointer; transition: all 0.2s ease;
         }
 
         .lang-btn.active {
-            background: var(--primary);
-            color: #000;
+            background: var(--primary); color: #000;
             box-shadow: 0 0 10px var(--primary-glow);
         }
 
         /* Logotip */
         .logo-container {
-            position: relative;
-            width: 90px;
-            height: 90px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            position: relative; width: 90px; height: 90px;
+            margin-bottom: 20px; display: flex; justify-content: center; align-items: center;
         }
 
         .ring {
-            position: absolute;
-            border-radius: 50%;
+            position: absolute; border-radius: 50%;
             border: 2px solid transparent;
-            animation: spin 8s linear infinite;
-            will-change: transform;
+            animation: spin 8s linear infinite; will-change: transform;
         }
         .ring-1 { width: 100%; height: 100%; border-top-color: var(--primary); border-right-color: var(--primary); }
         .ring-2 { width: 75%; height: 75%; border-bottom-color: var(--secondary); border-left-color: var(--secondary); animation-direction: reverse; }
         .center-icon {
-            width: 45%;
-            height: 45%;
+            width: 45%; height: 45%;
             background: linear-gradient(135deg, var(--primary), var(--secondary));
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 20px;
-            box-shadow: 0 0 20px var(--primary-glow);
-            z-index: 2;
+            border-radius: 50%; display: flex; justify-content: center; align-items: center;
+            font-size: 20px; box-shadow: 0 0 20px var(--primary-glow); z-index: 2;
         }
 
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
-        .title {
-            font-size: 24px;
-            font-weight: 900;
-            text-align: center;
-            margin-bottom: 6px;
-            letter-spacing: -0.5px;
-        }
-        .subtitle {
-            font-size: 13px;
-            color: var(--primary);
-            text-align: center;
-            font-weight: 600;
-            margin-bottom: 30px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
+        .title { font-size: 24px; font-weight: 900; text-align: center; margin-bottom: 6px; letter-spacing: -0.5px; }
+        .subtitle { font-size: 13px; color: var(--primary); text-align: center; font-weight: 600; margin-bottom: 30px; letter-spacing: 1px; text-transform: uppercase; }
 
         /* KARTOCHKALAR */
         .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 24px;
-            width: 100%;
-            max-width: 600px;
-            margin-bottom: 24px;
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 20px; padding: 24px;
+            width: 100%; max-width: 600px; margin-bottom: 24px;
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
-            
-            opacity: 0;
-            transform: translateY(20px);
+            opacity: 0; transform: translateY(20px);
             transition: opacity 0.4s ease-out, transform 0.4s ease-out;
             will-change: opacity, transform;
         }
@@ -198,125 +138,57 @@
         .card.show { opacity: 1; transform: translateY(0); }
 
         .card-header {
-            display: flex;
-            align-items: center;
-            font-size: 16px;
-            font-weight: 800;
-            color: var(--primary);
-            margin-bottom: 16px;
-            padding-bottom: 16px;
+            display: flex; align-items: center; font-size: 16px; font-weight: 800;
+            color: var(--primary); margin-bottom: 16px; padding-bottom: 16px;
             border-bottom: 1px solid var(--border-color);
         }
         .card-header span:first-child { margin-right: 12px; font-size: 22px; }
 
-        p, ul, ol {
-            font-size: 14.5px;
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 16px;
-        }
+        p, ul, ol { font-size: 14.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
         ul, ol { padding-left: 20px; }
         li { margin-bottom: 10px; }
         b { color: var(--text-main); font-weight: 700; }
 
         code.copyable {
-            background: rgba(255, 255, 255, 0.1);
-            color: #facc15;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-family: 'Fira Code', monospace;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: inline-block;
-            border: 1px solid transparent;
+            background: rgba(255, 255, 255, 0.1); color: #facc15;
+            padding: 4px 8px; border-radius: 6px;
+            font-family: 'Fira Code', monospace; font-size: 13px;
+            cursor: pointer; transition: all 0.2s ease;
+            display: inline-block; border: 1px solid transparent;
         }
-        code.copyable:active {
-            background: var(--primary);
-            color: #000;
-            border-color: var(--primary);
-        }
+        code.copyable:active { background: var(--primary); color: #000; border-color: var(--primary); }
 
         /* KOD BLOKLARI */
-        .code-container {
-            position: relative;
-            margin: 16px 0;
-            border-radius: 12px;
-            overflow: hidden;
-            background: #000000;
-            border: 1px solid #222;
-        }
-
-        .code-box {
-            padding: 20px 16px;
-            font-family: 'Fira Code', monospace;
-            font-size: 13.5px;
-            color: #a78bfa;
-            overflow-x: auto;
-            white-space: pre;
-            line-height: 1.6;
-        }
-
+        .code-container { position: relative; margin: 16px 0; border-radius: 12px; overflow: hidden; background: #000000; border: 1px solid #222; }
+        .code-box { padding: 20px 16px; font-family: 'Fira Code', monospace; font-size: 13.5px; color: #a78bfa; overflow-x: auto; white-space: pre; line-height: 1.6; }
         .copy-btn {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(0, 255, 136, 0.1);
-            color: var(--primary);
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-weight: 700;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            position: absolute; top: 12px; right: 12px;
+            background: rgba(0, 255, 136, 0.1); color: var(--primary);
+            border: 1px solid rgba(0, 255, 136, 0.3); padding: 6px 12px;
+            border-radius: 8px; font-weight: 700; font-size: 11px;
+            cursor: pointer; transition: all 0.2s ease;
         }
-
         .copy-btn:active { transform: scale(0.92); }
         .copy-btn.success { background: var(--primary); color: #000; border-color: var(--primary); }
 
-        /* 2. PASTKI TUGMA */
+        /* PASTKI TUGMA */
         .creator-footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            padding: 40px 16px 25px 16px;
-            z-index: 99999;
+            position: fixed; bottom: 0; left: 0; width: 100%;
+            padding: 40px 16px 25px 16px; z-index: 99999;
             background: linear-gradient(to top, #050508 60%, rgba(5,5,8,0) 100%);
-            display: flex;
-            justify-content: center;
-            pointer-events: none;
+            display: flex; justify-content: center; pointer-events: none;
             padding-bottom: calc(25px + env(safe-area-inset-bottom));
         }
 
         .creator-link {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            background: #0a0a0f;
-            color: #ffffff;
-            text-decoration: none;
-            padding: 12px 30px;
-            border-radius: 50px;
-            font-size: 16px;
-            font-weight: 800;
-            border: 2px solid #2ed573;
-            box-shadow: 0 4px 20px rgba(46, 213, 115, 0.2);
-            transition: all 0.2s ease;
-            width: 100%;
-            max-width: 400px;
-            pointer-events: auto;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            background: #0a0a0f; color: #ffffff; text-decoration: none;
+            padding: 12px 30px; border-radius: 50px; font-size: 16px; font-weight: 800;
+            border: 2px solid #2ed573; box-shadow: 0 4px 20px rgba(46, 213, 115, 0.2);
+            transition: all 0.2s ease; width: 100%; max-width: 400px; pointer-events: auto;
         }
-
-        .creator-link:active {
-            transform: scale(0.95);
-            background: rgba(46, 213, 115, 0.15);
-        }
-
+        .creator-link:active { transform: scale(0.95); background: rgba(46, 213, 115, 0.15); }
         .creator-icon { font-size: 20px; }
-        
     </style>
 </head>
 <body>
@@ -336,8 +208,7 @@
     </div>
 
     <div class="logo-container">
-        <div class="ring ring-1"></div>
-        <div class="ring ring-2"></div>
+        <div class="ring ring-1"></div><div class="ring ring-2"></div>
         <div class="center-icon">💻</div>
     </div>
 
@@ -353,10 +224,7 @@
             <div class="code-box">pkg update && pkg upgrade -y
 termux-setup-storage</div>
         </div>
-        <p style="font-size:13px; color:#888;">
-            * <code class="copyable" onclick="copyInline(this)">termux-setup-storage</code> 
-            <span data-uz="telefoningiz xotirasiga kirishga ruxsat beradi." data-ru="разрешает доступ к памяти телефона." data-en="allows access to your phone's storage." data-ar="يسمح بالوصول إلى ذاكرة هاتفك.">telefoningiz xotirasiga kirishga ruxsat beradi.</span>
-        </p>
+        <p style="font-size:13px; color:#888;">* <code class="copyable" onclick="copyInline(this)">termux-setup-storage</code> <span data-uz="telefoningiz xotirasiga kirishga ruxsat beradi." data-ru="разрешает доступ к памяти телефона." data-en="allows access to your phone's storage." data-ar="يسمح بالوصول إلى ذاكرة هاتفك.">telefoningiz xotirasiga kirishga ruxsat beradi.</span></p>
     </div>
 
     <!-- 2. MT Manager -->
@@ -372,49 +240,33 @@ termux-setup-storage</div>
     <!-- 3. Python -->
     <div class="card">
         <div class="card-header"><span>🐍</span> <span data-uz="3. PYTHON VA KUTUBXONALAR" data-ru="3. PYTHON И БИБЛИОТЕКИ" data-en="3. PYTHON & LIBRARIES" data-ar="3. Python والمكتبات">3. PYTHON VA KUTUBXONALAR</span></div>
-        
         <p data-uz="Python — bu eng oson va ommabop dasturlash tili. Termux yordamida telefoningizda to'liq dasturlar va botlar yozishingiz mumkin." data-ru="Python — это самый простой и популярный язык программирования. С помощью Termux вы можете писать полноценные программы и ботов на телефоне." data-en="Python is the easiest and most popular programming language. Using Termux, you can write full-fledged programs and bots on your phone." data-ar="Python هي لغة البرمجة الأسهل والأكثر شيوعًا. باستخدام Termux، يمكنك كتابة برامج وبوتات كاملة على هاتفك.">Python — bu eng oson va ommabop dasturlash tili. Termux yordamida telefoningizda to'liq dasturlar va botlar yozishingiz mumkin.</p>
         
         <p><b data-uz="1. Python va Pip o'rnatish:" data-ru="1. Установка Python и Pip:" data-en="1. Install Python & Pip:" data-ar="1. تثبيت Python و Pip:">1. Python va Pip o'rnatish:</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">pkg install python -y</div>
-        </div>
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">pkg install python -y</div></div>
 
         <p><b data-uz="2. Papka yaratish va unga kirish:" data-ru="2. Создание папки и вход в нее:" data-en="2. Create a folder and enter it:" data-ar="2. إنشاء مجلد والدخول إليه:">2. Papka yaratish va unga kirish:</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">mkdir name
-cd name</div>
-        </div>
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">mkdir name
+cd name</div></div>
 
         <p><b data-uz="3. Fayl ochish va kod yozish:" data-ru="3. Открытие файла и написание кода:" data-en="3. Open file and write code:" data-ar="3. فتح الملف وكتابة الكود:">3. Fayl ochish va kod yozish:</b></p>
         <p style="font-size:13px; color:#888;" data-uz="* Saqlash uchun <b>CTRL+X</b>, keyin <b>Y</b>, keyin <b>Enter</b> ni bosing." data-ru="* Для сохранения нажмите <b>CTRL+X</b>, затем <b>Y</b>, затем <b>Enter</b>." data-en="* To save, press <b>CTRL+X</b>, then <b>Y</b>, then <b>Enter</b>." data-ar="* للحفظ، اضغط على <b>CTRL+X</b>، ثم <b>Y</b>، ثم <b>Enter</b>.">* Saqlash uchun <b>CTRL+X</b>, keyin <b>Y</b>, keyin <b>Enter</b> ni bosing.</p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">nano name.py
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">nano name.py
 
 # Ichiga yozing:
-print("Salom, Termux!")</div>
-        </div>
+print("Salom, Termux!")</div></div>
 
         <p><b data-uz="4. Kodni ishga tushirish usullari:" data-ru="4. Способы запуска кода:" data-en="4. Ways to run code:" data-ar="4. طرق تشغيل الكود:">4. Kodni ishga tushirish usullari:</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box"># 1. Papka ichida:
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box"># 1. Papka ichida:
 python name.py
 
 # 2. Papkadan tashqarida:
-python name/name.py</div>
-        </div>
+python name/name.py</div></div>
 
         <p><b data-uz="5. Kerakli kutubxonalar (Pip):" data-ru="5. Необходимые библиотеки (Pip):" data-en="5. Required Libraries (Pip):" data-ar="5. المكتبات المطلوبة (Pip):">5. Kerakli kutubxonalar (Pip):</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">pip install requests
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">pip install requests
 pip install beautifulsoup4
-pip install python-telegram-bot</div>
-        </div>
+pip install python-telegram-bot</div></div>
     </div>
 
     <!-- 4. Muhim Buyruqlar -->
@@ -432,36 +284,26 @@ pip install python-telegram-bot</div>
     <!-- 5. Java -->
     <div class="card">
         <div class="card-header"><span>☕</span> <span data-uz="5. JAVA DASTURLASH" data-ru="5. ПРОГРАММИРОВАНИЕ JAVA" data-en="5. JAVA PROGRAMMING" data-ar="5. برمجة Java">5. JAVA DASTURLASH</span></div>
-        
         <p><b data-uz="1. Java (JDK) ni o'rnatish:" data-ru="1. Установка Java (JDK):" data-en="1. Install Java (JDK):" data-ar="1. تثبيت Java (JDK):">1. Java (JDK) ni o'rnatish:</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">pkg install openjdk-17 -y
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">pkg install openjdk-17 -y
 
 # Tekshirish:
 java -version
-javac -version</div>
-        </div>
+javac -version</div></div>
 
         <p><b data-uz="2. Kod yozish (Fayl nomi katta harf bilan):" data-ru="2. Написание кода (Имя файла с заглавной):" data-en="2. Write code (File name starts with capital):" data-ar="2. كتابة الكود (يبدأ اسم الملف بحرف كبير):">2. Kod yozish (Fayl nomi katta harf bilan):</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">nano Salom.java
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">nano Salom.java
 
 // Ichiga yozing:
 public class Salom {
     public static void main(String[] args) {
         System.out.println("Salom, Termux!");
     }
-}</div>
-        </div>
+}</div></div>
 
         <p><b data-uz="3. Kompilyatsiya va ishga tushirish:" data-ru="3. Компиляция и запуск:" data-en="3. Compile and run:" data-ar="3. تجميع وتشغيل:">3. Kompilyatsiya va ishga tushirish:</b></p>
-        <div class="code-container">
-            <button class="copy-btn" onclick="copyCode(this)">COPY</button>
-            <div class="code-box">javac Salom.java
-java Salom</div>
-        </div>
+        <div class="code-container"><button class="copy-btn" onclick="copyCode(this)">COPY</button><div class="code-box">javac Salom.java
+java Salom</div></div>
     </div>
 
     <!-- PASTKI QOTIB TURUVCHI QISM -->
@@ -559,7 +401,6 @@ java Salom</div>
         }
 
         const cards = document.querySelectorAll('.card');
-        
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
@@ -567,12 +408,9 @@ java Salom</div>
                     observer.unobserve(entry.target); 
                 }
             });
-        }, {
-            threshold: 0.1,
-            rootMargin: "0px 0px -20px 0px"
-        });
+        }, { threshold: 0.1, rootMargin: "0px 0px -20px 0px" });
 
         cards.forEach(card => observer.observe(card));
     </script>
 </body>
-          </html>
+                    </html>
