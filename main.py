@@ -1,37 +1,24 @@
 import os
 import logging
-import threading
-import uvicorn
-import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import uvicorn
 
-# Render'dagi Environment Variables'dan tokenni oladi
-TOKEN = os.environ.get("TOKEN", "SIZNING_TOKENINGIZNI_SHU_YERGA_YOZING")
+# ==========================================
+# XAVFSIZLIK QISMI: Barcha maxfiy ma'lumotlar faqat Render'dan olinadi
+# ==========================================
+TOKEN = os.environ.get("TOKEN")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+
+if not TOKEN or not RENDER_EXTERNAL_URL:
+    raise ValueError("Xatolik: TOKEN yoki RENDER_EXTERNAL_URL Render'dagi Environment'da kiritilmagan!")
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ==========================================
-# 1. VEB SERVER QISMI (FastAPI - HTML uchun)
-# ==========================================
-app = FastAPI()
-
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    return "<h1 style='color:green; font-family:sans-serif;'>Bot muvaffaqiyatli ishlayapti!</h1>"
-
-@app.get("/tutorial", response_class=HTMLResponse)
-async def get_tutorial():
-    try:
-        with open("tutorial.html", "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        return "<h1 style='color:red;'>Xatolik: tutorial.html topilmadi!</h1>"
-
-# ==========================================
-# 2. TELEGRAM BOT QISMI
+# TELEGRAM BOT QISMI (Handlers)
 # ==========================================
 LESSONS = {
     1: "https://t.me/termux_tutoril/3", 2: "https://t.me/termux_tutoril/4", 3: "https://t.me/termux_tutoril/5",
@@ -90,29 +77,48 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_to_start":
         await start(update, context)
 
-def run_telegram_bot():
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_tap))
-    
-    # ENG MUHIM QISM: Eski webhook va xabarlarni majburiy tozalash
+# Telegram Application-ni yaratish
+application = Application.builder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(button_tap))
+
+# ==========================================
+# VEB SERVER VA WEBHOOK QISMI (FastAPI)
+# ==========================================
+app = FastAPI()
+
+@app.on_event("startup")
+async def on_startup():
+    # Botni ishga tushirish va Webhookni xavfsiz ulash
+    await application.initialize()
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
+    await application.bot.set_webhook(url=webhook_url)
+    print(f"✅ Webhook muvaffaqiyatli o'rnatildi: {RENDER_EXTERNAL_URL}/webhook/***")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await application.shutdown()
+
+@app.post(f"/webhook/{TOKEN}")
+async def telegram_webhook(request: Request):
+    # Telegramdan kelgan xabarni qabul qilish
+    data = await request.json()
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+    return {"status": "ok"}
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    return "<h1 style='color:green; font-family:sans-serif;'>Bot va API muvaffaqiyatli ishlayapti!</h1>"
+
+@app.get("/tutorial", response_class=HTMLResponse)
+async def get_tutorial():
     try:
-        print("Eski webhook tozalanmoqda...")
-        asyncio.run(application.bot.delete_webhook(drop_pending_updates=True))
-    except Exception as e:
-        print(f"Webhook tozalashda xatolik: {e}")
+        with open("tutorial.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1 style='color:red;'>Xatolik: tutorial.html topilmadi!</h1>"
 
-    print("Telegram bot ishga tushdi...")
-    application.run_polling()
-
-# ==========================================
-# 3. ASOSIY ISHGA TUSHIRISH
-# ==========================================
 if __name__ == "__main__":
-    # Botni orqa fonda ishga tushirish
-    threading.Thread(target=run_telegram_bot, daemon=True).start()
-    
-    # Veb-serverni Render portida ishga tushirish
     port = int(os.environ.get("PORT", 8080))
-    print(f"Veb-server {port}-portda ishga tushdi...")
     uvicorn.run(app, host="0.0.0.0", port=port)
