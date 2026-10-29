@@ -22,6 +22,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # VIDEOLAR MA'LUMOTLARI
 # ==========================================
 CHANNEL_USERNAME = "@termux_tutoril" 
+
+# Asosiy Termux darsliklari (45 ta)
 LESSONS = {
     1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 10, 9: 11, 10: 12,
     11: 13, 12: 14, 13: 15, 14: 16, 15: 17, 16: 18, 17: 19, 18: 20, 19: 21, 20: 22,
@@ -30,21 +32,35 @@ LESSONS = {
     41: 43, 42: 44, 43: 45, 44: 46, 45: 47
 }
 
+# Yangi Lua darsliklari (Siz bergan linklar asosida)
+LUA_LESSONS = {
+    1: 93, 
+    2: 94, 
+    3: 97, 
+    4: 98, 
+    5: 99, 
+    6: 100, 
+    7: 101
+}
+
+# "PYTHON OLISH" tugmasi uchun maxsus videolar
+PYTHON_EXTRA_VIDEOS = [95, 96]
+
 # /start buyrug'i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info_text = (
         "👋 **Assalomu alaykum!**\n\n"
         "Men **Termux va Dasturlash** bo'yicha yordamchi botman.\n\n"
-        "📚 TERMUX UCHUN 45 ta video darslik tayyor"
+        "📚 TERMUX UCHUN maxsus video darsliklar tayyor"
     )
     keyboard = [
         [InlineKeyboardButton("📽️ TERMUX VIDEO DARSLIKLAR", callback_data="page_1")],
-        [InlineKeyboardButton("📽️ TERMUX LUA PAK VIDEO DARSLIK", callback_data="lua_coming_soon")],
+        [InlineKeyboardButton("📽️ TERMUX LUA PAK VIDEO DARSLIK", callback_data="lua_page_1")],
         [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
     ]
     await update.message.reply_text(info_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# Darsliklar menyusini yasash
+# Asosiy darsliklar menyusi (Sahifalash)
 def get_lessons_keyboard(page=1):
     keyboard = []
     start_idx = (page - 1) * 10 + 1
@@ -62,14 +78,29 @@ def get_lessons_keyboard(page=1):
     keyboard.append([InlineKeyboardButton("🔙 Bosh menyu", callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
-# Tugmalar bosilganda
+# Lua darsliklar menyusi
+def get_lua_lessons_keyboard():
+    keyboard = []
+    row = []
+    for i in range(1, 8): # 7 ta video
+        row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lua_lesson_{i}"))
+        if len(row) == 2:
+            keyboard.append(row); row = []
+    if row: keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("🔙 Bosh menyu", callback_data="back_to_start")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+# Tugmalar bosilganda ishlaydigan asosiy funksiya
 async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
     chat_id = query.message.chat_id
     
-    # 1. Asosiy darsliklar sahifasi
+    # ==========================================
+    # 1. ASOSIY DARSLIKLAR (Termux)
+    # ==========================================
     if data.startswith("page_"):
         page = int(data.split("_")[1])
         text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
@@ -78,7 +109,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_lessons_keyboard(page), parse_mode='Markdown')
             
-    # 2. Darslik tanlanganda (Videoni tashlash)
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS[lesson_num]
@@ -88,36 +118,69 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         
         try:
-            await context.bot.copy_message(
-                chat_id=chat_id,
-                from_chat_id=CHANNEL_USERNAME,
-                message_id=message_id,
-                reply_markup=video_keyboard
-            )
+            await context.bot.copy_message(chat_id=chat_id, from_chat_id=CHANNEL_USERNAME, message_id=message_id, reply_markup=video_keyboard)
             await query.message.delete()
         except TelegramError:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"❌ **Xatolik!**\n\n{lesson_num}-darslikni yuklab bo'lmadi.",
-                parse_mode='Markdown'
-            )
+            await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Videoni yuklab bo'lmadi.", parse_mode='Markdown')
 
-    # 3. LUA DARSLIKLARI UCHUN VAQTINCHALIK JAVOB
-    elif data == "lua_coming_soon":
-        text = "📽️ **TERMUX LUA PAK VIDEO DARSLIK**\n\nUshbu bo'lim tez orada ishga tushadi! Kutib turing."
-        keyboard = [[InlineKeyboardButton("🔙 Bosh menyu", callback_data="back_to_start")]]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    # ==========================================
+    # 2. LUA DARSLIKLARI (Yangi)
+    # ==========================================
+    elif data == "lua_page_1":
+        text = "📚 **TERMUX LUA PAK DARSLIKLARI**\n\nKerakli darslikni tanlang:"
+        try:
+            await query.edit_message_text(text=text, reply_markup=get_lua_lessons_keyboard(), parse_mode='Markdown')
+        except Exception:
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_lua_lessons_keyboard(), parse_mode='Markdown')
+
+    elif data.startswith("lua_lesson_"):
+        lesson_num = int(data.split("_")[2])
+        message_id = LUA_LESSONS[lesson_num]
         
-    # 4. Bosh menyuga qaytish
+        # Tugmalar ro'yxatini tayyorlaymiz
+        buttons = []
+        
+        # Agar foydalanuvchi 2-darslikni bosgan bo'lsa, "PYTHON OLISH" tugmasini qo'shamiz
+        if lesson_num == 2:
+            buttons.append([InlineKeyboardButton("🐍 PYTHON OLISH", callback_data="python_extra")])
+            
+        buttons.append([InlineKeyboardButton("📚 Darsliklar (Menyu)", callback_data="lua_page_1")])
+        video_keyboard = InlineKeyboardMarkup(buttons)
+        
+        try:
+            await context.bot.copy_message(chat_id=chat_id, from_chat_id=CHANNEL_USERNAME, message_id=message_id, reply_markup=video_keyboard)
+            await query.message.delete()
+        except TelegramError:
+            await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Videoni yuklab bo'lmadi.", parse_mode='Markdown')
+
+    # ==========================================
+    # 3. PYTHON MAXSUS VIDEOLARI (Faqat 2-darslik ostidan chiqadi)
+    # ==========================================
+    elif data == "python_extra":
+        try:
+            # 95 va 96-videolarni ketma-ket tashlaymiz
+            for v_id in PYTHON_EXTRA_VIDEOS:
+                await context.bot.copy_message(chat_id=chat_id, from_chat_id=CHANNEL_USERNAME, message_id=v_id)
+            
+            # Xabar oxirida qaytish tugmasi
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Lua darsliklariga qaytish", callback_data="lua_page_1")]])
+            await context.bot.send_message(chat_id=chat_id, text="Mana siz so'ragan Python darsliklari! ✅", reply_markup=back_kb)
+            
+        except TelegramError:
+            await context.bot.send_message(chat_id=chat_id, text="❌ **Xatolik!** Python videolarini yuklab bo'lmadi.", parse_mode='Markdown')
+        
+    # ==========================================
+    # 4. BOSH MENYU
+    # ==========================================
     elif data == "back_to_start":
         info_text = (
             "👋 **Assalomu alaykum!**\n\n"
             "Men **Termux va Dasturlash** bo'yicha yordamchi botman.\n\n"
-            "📚 TERMUX UCHUN 45 ta video darslik tayyor"
+            "📚 TERMUX UCHUN maxsus video darsliklar tayyor"
         )
         keyboard = [
             [InlineKeyboardButton("📽️ TERMUX VIDEO DARSLIKLAR", callback_data="page_1")],
-            [InlineKeyboardButton("📽️ TERMUX LUA PAK VIDEO DARSLIK", callback_data="lua_coming_soon")],
+            [InlineKeyboardButton("📽️ TERMUX LUA PAK VIDEO DARSLIK", callback_data="lua_page_1")],
             [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
         ]
         try:
