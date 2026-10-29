@@ -112,7 +112,7 @@ TEXTS = {
 }
 
 # ==========================================
-# KLAVIATURALAR (Tilga qarab)
+# KLAVIATURALAR
 # ==========================================
 def get_lang_keyboard():
     return InlineKeyboardMarkup([
@@ -159,15 +159,13 @@ def get_lua_lessons_keyboard(lang):
     return InlineKeyboardMarkup(keyboard)
 
 # ==========================================
-# HANDLERLAR (Buyruqlar)
+# HANDLERLAR
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Foydalanuvchi tilni tanlaganmi?
-    if 'lang' not in context.user_data:
-        await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
-    else:
-        lang = context.user_data['lang']
-        await update.message.reply_text(TEXTS[lang]['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
+    # Foydalanuvchi /start bosganda har doim til tanlashni so'raymiz
+    # Xotirani tozalaymiz (agar oldin til tanlagan bo'lsa ham, yangidan boshlanadi)
+    context.user_data.clear() 
+    await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
 
 async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -182,7 +180,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(TEXTS[lang]['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
         return
 
-    # Qolgan barcha amallar uchun foydalanuvchi tilini olamiz (default: uz)
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
 
