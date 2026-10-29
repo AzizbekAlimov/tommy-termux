@@ -69,15 +69,16 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = query.message.chat_id
     
+    # Sahifalarni almashtirish
     if data.startswith("page_"):
         page = int(data.split("_")[1])
         text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
         try:
             await query.edit_message_text(text=text, reply_markup=get_lessons_keyboard(page), parse_mode='Markdown')
         except Exception:
-            # Agar oldingi xabar matnli bo'lmasa (video bo'lsa), yangi xabar yuborish
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_lessons_keyboard(page), parse_mode='Markdown')
             
+    # Darslik tanlanganda (Videoni tashlash)
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS[lesson_num]
@@ -88,21 +89,25 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         
         try:
-            # Kanalga ulangan videoni va uning matnini to'liq nusxalash
+            # 1. Videoni va uning ostidagi yozuvni nusxalab tashlaymiz
             await context.bot.copy_message(
                 chat_id=chat_id,
                 from_chat_id=CHANNEL_USERNAME,
                 message_id=message_id,
                 reply_markup=video_keyboard
             )
-        except TelegramError as e:
-            # Agar bot kanalda admin bo'lmasa yoki video o'chirilgan bo'lsa
+            # 2. Videoni tashlagandan so'ng, tepadagi ro'yxatni (eski xabarni) o'chirib tashlaymiz
+            await query.message.delete()
+            
+        except TelegramError:
+            # Agar bot admin bo'lmasa yoki video topilmasa
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"❌ **Xatolik!**\n\n{lesson_num}-darslikni yuklab bo'lmadi.\nSababi: Bot kanalda admin emas yoki video o'chirilgan.\n\nIltimos, kanalga o'ting: https://t.me/termux_tutoril/{message_id}",
+                text=f"❌ **Xatolik!**\n\n{lesson_num}-darslikni yuklab bo'lmadi.\nSababi: Bot kanalda admin emas yoki video o'chirilgan.",
                 parse_mode='Markdown'
             )
         
+    # Bosh menyuga qaytish
     elif data == "back_to_start":
         info_text = (
             "👋 **Assalomu alaykum!**\n\n"
@@ -147,7 +152,7 @@ async def telegram_webhook(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    return "<h1 style='color:green;'>Bot muvaffaqiyatli ishlayapti!</h1>"
+    return "<h1 style='color:green; font-family:sans-serif;'>Bot muvaffaqiyatli ishlayapti!</h1>"
 
 @app.get("/tutorial", response_class=HTMLResponse)
 async def get_tutorial():
