@@ -38,8 +38,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📚 TERMUX UCHUN 45 ta video darslik tayyor"
     )
     keyboard = [
-        # BU YERDA TUGMA NOMI O'ZGARTIRILDI
         [InlineKeyboardButton("📽️ TERMUX VIDEO DARSLIKLAR", callback_data="page_1")],
+        [InlineKeyboardButton("📽️ TERMUX LUA PAK VIDEO DARSLIK", callback_data="lua_coming_soon")],
         [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
     ]
     await update.message.reply_text(info_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -69,6 +69,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = query.message.chat_id
     
+    # 1. Asosiy darsliklar sahifasi
     if data.startswith("page_"):
         page = int(data.split("_")[1])
         text = f"📚 **Video darsliklar**\n\nSahifa: {page} / 5\nO'zingizga kerakli darslikni tanlang:"
@@ -77,6 +78,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_lessons_keyboard(page), parse_mode='Markdown')
             
+    # 2. Darslik tanlanganda (Videoni tashlash)
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS[lesson_num]
@@ -93,15 +95,20 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=video_keyboard
             )
             await query.message.delete()
-            
         except TelegramError:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"❌ **Xatolik!**\n\n{lesson_num}-darslikni yuklab bo'lmadi.\nSababi: Bot kanalda admin emas yoki video o'chirilgan.",
+                text=f"❌ **Xatolik!**\n\n{lesson_num}-darslikni yuklab bo'lmadi.",
                 parse_mode='Markdown'
             )
+
+    # 3. LUA DARSLIKLARI UCHUN VAQTINCHALIK JAVOB
+    elif data == "lua_coming_soon":
+        text = "📽️ **TERMUX LUA PAK VIDEO DARSLIK**\n\nUshbu bo'lim tez orada ishga tushadi! Kutib turing."
+        keyboard = [[InlineKeyboardButton("🔙 Bosh menyu", callback_data="back_to_start")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         
-    # Bosh menyuga qaytish
+    # 4. Bosh menyuga qaytish
     elif data == "back_to_start":
         info_text = (
             "👋 **Assalomu alaykum!**\n\n"
@@ -109,8 +116,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📚 TERMUX UCHUN 45 ta video darslik tayyor"
         )
         keyboard = [
-            # BU YERDA HAM TUGMA NOMI O'ZGARTIRILDI
             [InlineKeyboardButton("📽️ TERMUX VIDEO DARSLIKLAR", callback_data="page_1")],
+            [InlineKeyboardButton("📽️ TERMUX LUA PAK VIDEO DARSLIK", callback_data="lua_coming_soon")],
             [InlineKeyboardButton("Murojaat uchun", url="https://t.me/Tommy_1727")]
         ]
         try:
