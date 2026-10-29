@@ -38,7 +38,7 @@ LUA_LESSONS = {
 PYTHON_EXTRA_VIDEOS = [96]
 
 # ==========================================
-# TILLAR UCHUN LUG'AT (TARJIMALAR)
+# TILLAR UCHUN LUG'AT
 # ==========================================
 TEXTS = {
     'uz': {
@@ -47,6 +47,7 @@ TEXTS = {
         'btn_termux': "📽️ TERMUX VIDEO DARSLIKLAR",
         'btn_lua': "📽️ TERMUX LUA PAK VIDEO DARSLIK",
         'btn_contact': "Murojaat uchun",
+        'btn_change_lang': "🌐 Tilni o'zgartirish",
         'btn_back': "🔙 Bosh menyu",
         'btn_prev': "⬅️ Oldingi",
         'btn_next': "Keyingi ➡️",
@@ -64,6 +65,7 @@ TEXTS = {
         'btn_termux': "📽️ ВИДЕОУРОКИ TERMUX",
         'btn_lua': "📽️ ВИДЕОУРОКИ TERMUX LUA",
         'btn_contact': "Для обращений",
+        'btn_change_lang': "🌐 Изменить язык",
         'btn_back': "🔙 Главное меню",
         'btn_prev': "⬅️ Предыдущий",
         'btn_next': "Следующий ➡️",
@@ -81,6 +83,7 @@ TEXTS = {
         'btn_termux': "📽️ TERMUX VIDEO LESSONS",
         'btn_lua': "📽️ TERMUX LUA VIDEO LESSONS",
         'btn_contact': "Contact us",
+        'btn_change_lang': "🌐 Change language",
         'btn_back': "🔙 Main menu",
         'btn_prev': "⬅️ Previous",
         'btn_next': "Next ➡️",
@@ -98,6 +101,7 @@ TEXTS = {
         'btn_termux': "📽️ دروس فيديو TERMUX",
         'btn_lua': "📽️ دروس فيديو TERMUX LUA",
         'btn_contact': "للتواصل",
+        'btn_change_lang': "🌐 تغيير اللغة",
         'btn_back': "🔙 القائمة الرئيسية",
         'btn_prev': "⬅️ السابق",
         'btn_next': "التالي ➡️",
@@ -125,7 +129,8 @@ def get_main_menu(lang):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1")],
         [InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_contact'], url="https://t.me/Tommy_1727")]
+        [InlineKeyboardButton(t['btn_contact'], url="https://t.me/Tommy_1727")],
+        [InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")] # TILNI O'ZGARTIRISH TUGMASI
     ])
 
 def get_lessons_keyboard(page, lang):
@@ -162,10 +167,13 @@ def get_lua_lessons_keyboard(lang):
 # HANDLERLAR
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Foydalanuvchi /start bosganda har doim til tanlashni so'raymiz
-    # Xotirani tozalaymiz (agar oldin til tanlagan bo'lsa ham, yangidan boshlanadi)
-    context.user_data.clear() 
-    await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+    # Agar foydalanuvchi til tanlagan bo'lsa, to'g'ridan-to'g'ri menyuga o'tadi
+    if 'lang' in context.user_data:
+        lang = context.user_data['lang']
+        await update.message.reply_text(TEXTS[lang]['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
+    else:
+        # Agar yangi foydalanuvchi bo'lsa yoki xotira tozalangan bo'lsa, til so'raydi
+        await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
 
 async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -180,10 +188,18 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(TEXTS[lang]['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
         return
 
+    # 2. TILNI O'ZGARTIRISH (Tugma orqali)
+    elif data == "change_lang":
+        # Tilni xotiradan o'chirib yuboramiz
+        context.user_data.pop('lang', None)
+        await query.edit_message_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+        return
+
+    # Qolgan barcha amallar uchun foydalanuvchi tilini olamiz (default: uz)
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
 
-    # 2. ASOSIY DARSLIKLAR
+    # 3. ASOSIY DARSLIKLAR
     if data.startswith("page_"):
         page = int(data.split("_")[1])
         text = t['text_page'].format(page=page)
@@ -202,7 +218,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError:
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
 
-    # 3. LUA DARSLIKLARI
+    # 4. LUA DARSLIKLARI
     elif data == "lua_page_1":
         try:
             await query.edit_message_text(text=t['text_lua'], reply_markup=get_lua_lessons_keyboard(lang), parse_mode='Markdown')
@@ -226,7 +242,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError:
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
 
-    # 4. PYTHON MAXSUS VIDEOLARI
+    # 5. PYTHON MAXSUS VIDEOLARI
     elif data == "python_extra":
         try:
             for v_id in PYTHON_EXTRA_VIDEOS:
@@ -238,7 +254,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="lua_page_1")]])
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_py'], reply_markup=back_kb)
         
-    # 5. BOSH MENYUGA QAYTISH
+    # 6. BOSH MENYUGA QAYTISH
     elif data == "back_to_start":
         try:
             await query.edit_message_text(text=t['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
