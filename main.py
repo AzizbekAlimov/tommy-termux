@@ -6,6 +6,13 @@ import re
 import asyncio
 import asyncpg
 import datetime
+import hashlib
+import base64
+import uuid
+import secrets
+import string
+import json as json_lib
+from urllib.parse import quote
 from io import BytesIO
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse
@@ -31,8 +38,8 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 ADMIN_ID = 7383782449
 
 # KANALLAR
-FORCE_SUB_CHANNEL = "@Tommy_cheat"    # Majburiy obuna
-VIDEO_CHANNEL = "@termux_tutoril"     # Videolar
+FORCE_SUB_CHANNEL = "@Tommy_cheat"
+VIDEO_CHANNEL = "@termux_tutoril"
 
 TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_arm64-v8a.apk"
 
@@ -49,7 +56,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 db_pool = None
 
 # ==========================================
-# YORDAMCHI FUNKSIYA (VIDEO OSTIDAGI TUGMALAR UCHUN)
+# YORDAMCHI FUNKSIYA
 # ==========================================
 async def edit_or_send(query, context, text, reply_markup):
     try:
@@ -89,7 +96,9 @@ async def init_db():
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_requests_today INT DEFAULT 0;")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ai_date DATE DEFAULT CURRENT_DATE;")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_challenge_date DATE DEFAULT '1970-01-01';")
-            
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INT DEFAULT 0;")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_streak_date DATE DEFAULT '1970-01-01';")
+
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS files (
                     id SERIAL PRIMARY KEY,
@@ -124,10 +133,20 @@ async def add_score_all(points):
 async def get_user_profile(user_id):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT score, last_bonus, is_premium, last_challenge_date FROM users WHERE user_id = $1', user_id)
+        user = await conn.fetchrow(
+            'SELECT score, last_bonus, is_premium, last_challenge_date, streak_days FROM users WHERE user_id = $1',
+            user_id
+        )
         if not user: return None
         rank = await conn.fetchval('SELECT COUNT(*) FROM users WHERE score > $1', user['score'])
-        return {"score": user['score'], "rank": rank + 1, "last_bonus": user['last_bonus'], "is_premium": user['is_premium'], "last_challenge_date": user['last_challenge_date']}
+        return {
+            "score": user['score'],
+            "rank": rank + 1,
+            "last_bonus": user['last_bonus'],
+            "is_premium": user['is_premium'],
+            "last_challenge_date": user['last_challenge_date'],
+            "streak_days": user['streak_days'] or 0
+        }
 
 async def claim_daily_bonus(user_id):
     if not db_pool: return False
@@ -152,9 +171,9 @@ async def check_ai_limit(user_id):
     async with db_pool.acquire() as conn:
         user = await conn.fetchrow('SELECT is_premium, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
         today = datetime.date.today()
-        
+
         if user['is_premium']: return True, 999
-        
+
         if user['last_ai_date'] < today:
             await conn.execute('UPDATE users SET ai_requests_today = 1, last_ai_date = $1 WHERE user_id = $2', today, user_id)
             return True, 4
@@ -191,8 +210,55 @@ def get_level(score):
     elif score < 600: return "🥇 Ilg'or"
     else: return "💎 Ekspert"
 
+def get_streak_reward(days):
+    rewards = {1: 10, 2: 15, 3: 25, 4: 30, 5: 30, 6: 30, 7: 75,
+               8: 40, 9: 40, 10: 50, 11: 40, 12: 40, 13: 40, 14: 150,
+               15: 50, 16: 50, 17: 50, 18: 50, 19: 50, 20: 60,
+               21: 60, 22: 60, 23: 60, 24: 60, 25: 70, 26: 70, 27: 70,
+               28: 70, 29: 70, 30: 500}
+    return rewards.get(days, 50)
+
+async def claim_streak(user_id):
+    if not db_pool:
+        return False, 0, 0, False, False
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow(
+            'SELECT streak_days, last_streak_date FROM users WHERE user_id = $1',
+            user_id
+        )
+        if not user:
+            return False, 0, 0, False, False
+
+        today = datetime.date.today()
+        last_date = user['last_streak_date']
+        current_streak = user['streak_days'] or 0
+
+        if last_date == today:
+            return False, current_streak, 0, False, True
+
+        yesterday = today - datetime.timedelta(days=1)
+
+        if last_date == yesterday:
+            new_streak = current_streak + 1
+            is_reset = False
+        else:
+            new_streak = 1
+            is_reset = (current_streak > 0)
+
+        reward = get_streak_reward(new_streak)
+
+        await conn.execute(
+            'UPDATE users SET streak_days = $1, last_streak_date = $2, score = score + $3 WHERE user_id = $4',
+            new_streak, today, reward, user_id
+        )
+
+        if new_streak == 30:
+            await conn.execute('UPDATE users SET is_premium = TRUE WHERE user_id = $1', user_id)
+
+        return True, new_streak, reward, is_reset, False
+
 async def is_subscribed(user_id, context):
-    if user_id == ADMIN_ID: return True 
+    if user_id == ADMIN_ID: return True
     try:
         member = await context.bot.get_chat_member(chat_id=FORCE_SUB_CHANNEL, user_id=user_id)
         if member.status in ['member', 'administrator', 'creator']: return True
@@ -201,7 +267,7 @@ async def is_subscribed(user_id, context):
         return True
 
 # ==========================================
-# VIDEOLAR ID RATAMLARI
+# VIDEOLAR ID
 # ==========================================
 LESSONS = {i: i+2 for i in range(1, 46)}
 LESSONS[46] = 103
@@ -245,7 +311,7 @@ TEXTS = {
         'choose_lang': "👋 **Assalomu alaykum!**\n\nIltimos, o'zingizga qulay tilni tanlang:",
         'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
         'btn_termux': "📽️ TERMUX DARSLIKLAR", 'btn_lua': "📽️ LUA PAK DARSLIK",
-        'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH", 
+        'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH",
         'btn_ai': "🤖 AI Dasturchi", 'btn_profile': "👤 Mening profilim",
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
@@ -253,7 +319,7 @@ TEXTS = {
         'btn_premium': "💎 Premium Obuna", 'btn_challenge': "🧩 Kunlik Masala", 'btn_theme': "🎨 Termux Temasi",
         'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
         'btn_python': "🐍 PYTHON OLISH", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
-        
+
         'force_sub_text': f"⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
 
@@ -303,7 +369,7 @@ TEXTS = {
         'cat_files': "📁 Fayllar", 'cat_packages': "📦 Paketlar", 'cat_network': "🌐 Tarmoq", 'cat_system': "⚙️ Tizim",
         'apk_caption': "📱 **Termux APK**", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌ Xatolik!",
         'support_prompt': "✉️ **Admin**\n\nXabaringizni yozib qoldiring:", 'support_sent': "✅ Yuborildi!", 'support_reply': "📬 **Admin:**\n\n",
-        
+
         'profile_text': "👤 **Profil**\n\n⭐ **Ball:** {score}\n🏅 **Daraja:** {level}\n📊 **O'rin:** #{rank}\n💎 **Holat:** {status}",
         'btn_daily_bonus': "🎁 Kunlik bonus (+20)", 'bonus_claimed': "✅ **+20 ball!**", 'bonus_wait': "⏳ Ertaga qayta keling!",
         'top_text': "🏆 **Top 10:**\n\n{list}",
@@ -312,31 +378,87 @@ TEXTS = {
         'quiz_wrong': "❌ **Xato!** To'g'ri javob: **{answer}**",
         'quiz_end': "🎉 **Barcha savollarni yechdingiz!**\n\nYangi savollar qo'shildi, yana urinib ko'rishingiz mumkin.",
         'btn_next_quiz': "➡️ Keyingi savol",
-        
+
         'sec_menu': "🛡️ **Kiberxavfsizlik Asboblari**\n\n⚠️ Faqat o'z tizimlaringizni tekshirish uchun!",
         'sec_info': "🔍 Ma'lumot yig'ish", 'sec_pass': "🔑 Parol hujumlari", 'sec_exploit': "💥 Zaifliklar", 'sec_network': "📡 Tarmoq tahlili",
         'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`",
-        
+
         'admin_bcast_start': "📢 Xabar yuboring:", 'admin_bcast_wait': "⏳...", 'admin_bcast_done': "✅ Yuborildi: {success}, Xato: {fail}", 'admin_bcast_cancel': "❌ Bekor",
         'ai_prompt': "🤖 **AI Dasturchi**\n\nDasturlash bo'yicha topshiriq bering yoki kod faylini tashlang.",
         'ai_wait': "🧠 AI ishlamoqda...", 'ai_error': "❌ Xatolik: {error}", 'ai_code_found': "✅ **Kod!**", 'ai_no_code': "🤖 **AI:**\n\n{text}",
         'ai_vision_error': "⚠️ Rasm xato.", 'ai_unsupported_file': "⚠️ Faqat kod fayllari.", 'ai_video_error': "🎥 Video yo'q.",
         'ai_file_too_large': "⚠️ Katta fayl.", 'ai_text_too_long': "⚠️ Uzun kod.", 'ai_not_coding': "🤖 Faqat dasturlash.",
         'ai_limit_info': "ℹ️ *Bugun uchun qolgan limitingiz: {limit} ta*",
-        
-        'java_info_text': "☕ **Termux'da Java Dasturlash**\n\nJava — kuchli va keng tarqalgan til. Termux'da buni sozlash juda oson!\n\n**1. Java (JDK) o'rnatish:**\n`pkg install openjdk-17 -y`\n\n**2. Tekshirish:**\n`java -version`\n`javac -version`\n\n**3. Fayl ochish:**\n_(Diqqat: fayl nomi katta harf bilan boshlanadi!)_\n`nano Salom.java`\n\n**4. Ichiga kod yozing:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n_(Saqlash: CTRL+X, keyin Y, keyin Enter)_\n\n**5. Kompilyatsiya qilish va ishga tushirish:**\n`javac Salom.java`\n`java Salom`"
+
+        'java_info_text': "☕ **Termux'da Java Dasturlash**\n\nJava — kuchli va keng tarqalgan til. Termux'da buni sozlash juda oson!\n\n**1. Java (JDK) o'rnatish:**\n`pkg install openjdk-17 -y`\n\n**2. Tekshirish:**\n`java -version`\n`javac -version`\n\n**3. Fayl ochish:**\n_(Diqqat: fayl nomi katta harf bilan boshlanadi!)_\n`nano Salom.java`\n\n**4. Ichiga kod yozing:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n_(Saqlash: CTRL+X, keyin Y, keyin Enter)_\n\n**5. Kompilyatsiya qilish va ishga tushirish:**\n`javac Salom.java`\n`java Salom`",
+
+        # YANGI
+        'btn_devtools': "🧰 Developer Tools",
+        'streak_btn': "🔥 Kunlik Streak",
+        'devtools_menu': "🧰 **Developer Tools Pack**\n\nKerakli asbobni tanlang:",
+        'devtools_pass': "🔐 Parol Generator",
+        'devtools_hash': "🔢 Hash Generator",
+        'devtools_b64enc': "📝 Base64 Encode",
+        'devtools_b64dec': "📝 Base64 Decode",
+        'devtools_uuid': "🆔 UUID Generator",
+        'devtools_qr': "📱 QR Code Generator",
+        'devtools_json': "📊 JSON Formatter",
+        'devtools_pass_prompt': "🔐 **Parol Generator**\n\nParol uzunligini kiriting (**8-64**):",
+        'devtools_hash_prompt': "🔢 **Hash Generator**\n\nMatn yuboring — MD5, SHA1, SHA256, SHA512 hisoblab beraman:",
+        'devtools_b64enc_prompt': "📝 **Base64 Encode**\n\nMatn yuboring:",
+        'devtools_b64dec_prompt': "📝 **Base64 Decode**\n\nBase64 matn yuboring:",
+        'devtools_json_prompt': "📊 **JSON Formatter**\n\nJSON matn yuboring (chiroyli formatda qaytaraman):",
+        'devtools_qr_prompt': "📱 **QR Code Generator**\n\nMatn yoki havola yuboring:",
+        'devtools_invalid': "❌ Xato: {error}",
+        'streak_claimed': "🔥 **Streak davom etdi!**\n\n📅 Kun: **{days}**\n🎁 Mukofot: **+{reward} ball**\n\n{extra}",
+        'streak_already': "✅ Bugun allaqachon olgansiz. Ertaga qaytib keling!",
+        'streak_reset_info': "⚠️ *Streak yangilandi!*",
+        'streak_7_bonus': "🎉 7 kunlik streak! Ajoyib davom eting!",
+        'streak_30_bonus': "🎉 **30 KUN!** Premium 1 oy sovg'a qilindi! 💎",
     },
-    # Qolgan tillar (ru, en, ar)
-    'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_files': "🗂 Файлы", 'btn_premium': "💎 Премиум", 'btn_challenge': "🧩 Задача дня", 'btn_theme': "🎨 Тема Termux", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 ПОЛУЧИТЬ PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'challenge_menu': "🧩 **Задача дня**\n\nРешите задачу и отправьте код. За правильный ответ **+30 баллов**!", 'challenge_problem': "📝 **Задача:**\n\n{text}\n\n💻 *Отправьте код:*", 'challenge_already_done': "✅ Вы уже решили задачу сегодня.", 'challenge_wait': "🤖 AI проверяет...", 'challenge_correct': "✅ **Верно!** 🎉\n\nВам начислено **+30 баллов**!", 'challenge_wrong': "❌ **Ошибка!**\n\n{feedback}\n\nИсправьте код и отправьте снова.", 'challenge_no_code': "⚠️ Отправьте код текстом или файлом.", 'theme_menu': "🎨 **Темы Termux**\n\nВыберите цвет. Бот пришлет файл `colors.properties`.", 'theme_send': "✅ **Тема {theme_name} готова!**\n\nИнструкция: переместите файл в `~/.termux/` и введите `termux-reload-settings`.", 'script_cat_menu': "📦 **Генератор**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Создать", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'files_menu': "🗂 **Файлы**", 'files_empty': "Нет файлов.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Только для Премиум!", 'premium_menu': "💎 **Премиум**\n\n50 Stars за 1 месяц.", 'btn_buy_premium': "⭐️ Купить за 50 Stars", 'premium_success': "🎉 Вы Премиум!", 'ai_limit_reached': "⚠️ Лимит (5/день). Купите Премиум.", 'btn_go_premium': "💎 Купить", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Файл", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Баллы:", 'admin_points_wait': "⏳ Рассылка...", 'admin_points_done': "✅ Добавлено {points}!\n📩 Отправлено: {success}\n❌ Ошибок: {fail}", 'admin_file_wait': "📂 Отправьте файл:", 'admin_file_title': "✍️ Название:", 'admin_file_saved': "✅ Сохранено!", 'admin_file_cancel': "❌ Отменено.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Ошибка! Видео не найдено.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Завтра!", 'top_text': "🏆 **Топ 10:**\n{list}", 'quiz_start': "🧠 **Тест!** +10 очков.\n\n❓ *Вопрос:*", 'quiz_correct': "✅ **Верно!** (+10)", 'quiz_wrong': "❌ **Ошибка!** Ответ: **{answer}**", 'quiz_end': "🎉 Вы ответили на все вопросы! Начинаем заново.", 'btn_next_quiz': "➡️ Следующий", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Лимит: {limit}", 'java_info_text': "☕ **Java в Termux**\n\n1. Установка: `pkg install openjdk-17 -y`\n2. Создание: `nano Salom.java`\n3. Код: `public class Salom { ... }`\n4. Запуск: `javac Salom.java` и `java Salom`"},
-    'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_files': "🗂 File Center", 'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Daily Challenge", 'btn_theme': "🎨 Termux Theme", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 GET PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'challenge_menu': "🧩 **Daily Challenge**\n\nSolve the problem and submit code. Correct answer gets **+30 points**!", 'challenge_problem': "📝 **Problem:**\n\n{text}\n\n💻 *Send your code:*", 'challenge_already_done': "✅ You already solved today's challenge.", 'challenge_wait': "🤖 AI is checking...", 'challenge_correct': "✅ **Correct!** 🎉\n\nYou earned **+30 points**!", 'challenge_wrong': "❌ **Wrong!**\n\n{feedback}\n\nFix the code and send again.", 'challenge_no_code': "⚠️ Send code as text or file.", 'theme_menu': "🎨 **Termux Themes**\n\nSelect a color. Bot sends `colors.properties`.", 'theme_send': "✅ **Theme {theme_name} ready!**\n\nInstructions: move file to `~/.termux/` and run `termux-reload-settings`.", 'script_cat_menu': "📦 **Script Generator**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'files_menu': "🗂 **File Center**", 'files_empty': "No files yet.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Premium only!", 'premium_menu': "💎 **Premium**\n\n50 Stars for 1 month.", 'btn_buy_premium': "⭐️ Buy for 50 Stars", 'premium_success': "🎉 You are Premium!", 'ai_limit_reached': "⚠️ Limit reached (5/day). Buy Premium.", 'btn_go_premium': "💎 Go Premium", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Add File", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Points to add:", 'admin_points_wait': "⏳ Sending...", 'admin_points_done': "✅ Added {points}!\n📩 Sent: {success}\n❌ Failed: {fail}", 'admin_file_wait': "📂 Send file:", 'admin_file_title': "✍️ File title:", 'admin_file_saved': "✅ Saved!", 'admin_file_cancel': "❌ Cancelled.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Error! Video not found.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Tomorrow!", 'top_text': "🏆 **Top 10:**\n{list}", 'quiz_start': "🧠 **Quiz!** +10 points.\n\n❓ *Question:*", 'quiz_correct': "✅ **Correct!** (+10)", 'quiz_wrong': "❌ **Wrong!** Answer: **{answer}**", 'quiz_end': "🎉 You've answered all questions! Starting over.", 'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Remaining: {limit}", 'java_info_text': "☕ **Java in Termux**\n\n1. Install: `pkg install openjdk-17 -y`\n2. Create: `nano Salom.java`\n3. Code: `public class Salom { ... }`\n4. Run: `javac Salom.java` and `java Salom`"},
-    'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_files': "🗂 الملفات", 'btn_premium': "💎 بريميوم", 'btn_challenge': "🧩 تحدي يومي", 'btn_theme': "🎨 ثيم Termux", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 الحصول على PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'challenge_menu': "🧩 **تحدي يومي**\n\nحل المشكلة وأرسل الكود. الإجابة الصحيحة تعطيك **+30 نقطة**!", 'challenge_problem': "📝 **المشكلة:**\n\n{text}\n\n💻 *أرسل الكود:*", 'challenge_already_done': "✅ لقد قمت بحل التحدي اليوم بالفعل.", 'challenge_wait': "🤖 AI يتحقق...", 'challenge_correct': "✅ **صحيح!** 🎉\n\nلقد حصلت على **+30 نقطة**!", 'challenge_wrong': "❌ **خطأ!**\n\n{feedback}\n\nصحح الكود وأرسله مرة أخرى.", 'challenge_no_code': "⚠️ أرسل الكود كنص أو ملف.", 'theme_menu': "🎨 **ثيمات Termux**\n\nاختر لوناً. سيرسل البوت ملف `colors.properties`.", 'theme_send': "✅ **الثيم {theme_name} جاهز!**\n\nالتعليمات: انقل الملف إلى `~/.termux/` ثم اكتب `termux-reload-settings`.", 'script_cat_menu': "📦 **مولد**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'files_menu': "🗂 **الملفات**", 'files_empty': "لا توجد ملفات.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 بريميوم فقط!", 'premium_menu': "💎 **بريميوم**\n\n50 نجمة لمدة شهر.", 'btn_buy_premium': "⭐️ شراء بـ 50 نجمة", 'premium_success': "🎉 أنت بريميوم!", 'ai_limit_reached': "⚠️ الحد (5/يوم). اشتري بريميوم.", 'btn_go_premium': "💎 اشتري", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ ملف", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 نقاط:", 'admin_points_wait': "⏳ جاري الإرسال...", 'admin_points_done': "✅ أضيفت {points}!\n📩 المرسل: {success}\n❌ الفشل: {fail}", 'admin_file_wait': "📂 أرسل ملفاً:", 'admin_file_title': "✍️ اسم الملف:", 'admin_file_saved': "✅ تم الحفظ!", 'admin_file_cancel': "❌ ملغي.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ خطأ! الفيديو غير موجود.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ غداً!", 'top_text': "🏆 **أفضل 10:**\n{list}", 'quiz_start': "🧠 **اختبار!** +10 نقاط.\n\n❓ *سؤال:*", 'quiz_correct': "✅ **صحيح!** (+10)", 'quiz_wrong': "❌ **خطأ!** الجواب: **{answer}**", 'quiz_end': "🎉 أجبت على جميع الأسئلة! نبدأ من جديد.", 'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ المتبقي: {limit}", 'java_info_text': "☕ **Java في Termux**\n\n1. التثبيت: `pkg install openjdk-17 -y`\n2. إنشاء: `nano Salom.java`\n3. الكود: `public class Salom { ... }`\n4. التشغيل: `javac Salom.java` و `java Salom`"}
+    'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_files': "🗂 Файлы", 'btn_premium': "💎 Премиум", 'btn_challenge': "🧩 Задача дня", 'btn_theme': "🎨 Тема Termux", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 ПОЛУЧИТЬ PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'challenge_menu': "🧩 **Задача дня**\n\nРешите задачу и отправьте код. За правильный ответ **+30 баллов**!", 'challenge_problem': "📝 **Задача:**\n\n{text}\n\n💻 *Отправьте код:*", 'challenge_already_done': "✅ Вы уже решили задачу сегодня.", 'challenge_wait': "🤖 AI проверяет...", 'challenge_correct': "✅ **Верно!** 🎉\n\nВам начислено **+30 баллов**!", 'challenge_wrong': "❌ **Ошибка!**\n\n{feedback}\n\nИсправьте код и отправьте снова.", 'challenge_no_code': "⚠️ Отправьте код текстом или файлом.", 'theme_menu': "🎨 **Темы Termux**\n\nВыберите цвет. Бот пришлет файл `colors.properties`.", 'theme_send': "✅ **Тема {theme_name} готова!**\n\nИнструкция: переместите файл в `~/.termux/` и введите `termux-reload-settings`.", 'script_cat_menu': "📦 **Генератор**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Создать", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'files_menu': "🗂 **Файлы**", 'files_empty': "Нет файлов.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Только для Премиум!", 'premium_menu': "💎 **Премиум**\n\n50 Stars за 1 месяц.", 'btn_buy_premium': "⭐️ Купить за 50 Stars", 'premium_success': "🎉 Вы Премиум!", 'ai_limit_reached': "⚠️ Лимит (5/день). Купите Премиум.", 'btn_go_premium': "💎 Купить", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Файл", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Баллы:", 'admin_points_wait': "⏳ Рассылка...", 'admin_points_done': "✅ Добавлено {points}!\n📩 Отправлено: {success}\n❌ Ошибок: {fail}", 'admin_file_wait': "📂 Отправьте файл:", 'admin_file_title': "✍️ Название:", 'admin_file_saved': "✅ Сохранено!", 'admin_file_cancel': "❌ Отменено.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Ошибка! Видео не найдено.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Завтра!", 'top_text': "🏆 **Топ 10:**\n{list}", 'quiz_start': "🧠 **Тест!** +10 очков.\n\n❓ *Вопрос:*", 'quiz_correct': "✅ **Верно!** (+10)", 'quiz_wrong': "❌ **Ошибка!** Ответ: **{answer}**", 'quiz_end': "🎉 Вы ответили на все вопросы! Начинаем заново.", 'btn_next_quiz': "➡️ Следующий", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Лимит: {limit}", 'java_info_text': "☕ **Java в Termux**\n\n1. Установка: `pkg install openjdk-17 -y`\n2. Создание: `nano Salom.java`\n3. Код: `public class Salom { ... }`\n4. Запуск: `javac Salom.java` и `java Salom`",
+        'btn_devtools': "🧰 Инструменты", 'streak_btn': "🔥 Серия дней",
+        'devtools_menu': "🧰 **Инструменты разработчика**", 'devtools_pass': "🔐 Пароль",
+        'devtools_hash': "🔢 Hash", 'devtools_b64enc': "📝 Base64 Enc", 'devtools_b64dec': "📝 Base64 Dec",
+        'devtools_uuid': "🆔 UUID", 'devtools_qr': "📱 QR", 'devtools_json': "📊 JSON",
+        'devtools_pass_prompt': "🔐 Длина пароля (8-64):", 'devtools_hash_prompt': "🔢 Введите текст:",
+        'devtools_b64enc_prompt': "📝 Введите текст:", 'devtools_b64dec_prompt': "📝 Base64:",
+        'devtools_json_prompt': "📊 JSON:", 'devtools_qr_prompt': "📱 Текст или ссылка:",
+        'devtools_invalid': "❌ Ошибка: {error}",
+        'streak_claimed': "🔥 **+{reward} очков!** (День {days})\n\n{extra}",
+        'streak_already': "✅ Уже получено сегодня!",
+        'streak_reset_info': "⚠️ Серия сброшена!", 'streak_7_bonus': "🎉 7 дней!", 'streak_30_bonus': "🎉 30 дней! Premium!"},
+    'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_files': "🗂 File Center", 'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Daily Challenge", 'btn_theme': "🎨 Termux Theme", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 GET PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'challenge_menu': "🧩 **Daily Challenge**\n\nSolve the problem and submit code. Correct answer gets **+30 points**!", 'challenge_problem': "📝 **Problem:**\n\n{text}\n\n💻 *Send your code:*", 'challenge_already_done': "✅ You already solved today's challenge.", 'challenge_wait': "🤖 AI is checking...", 'challenge_correct': "✅ **Correct!** 🎉\n\nYou earned **+30 points**!", 'challenge_wrong': "❌ **Wrong!**\n\n{feedback}\n\nFix the code and send again.", 'challenge_no_code': "⚠️ Send code as text or file.", 'theme_menu': "🎨 **Termux Themes**\n\nSelect a color. Bot sends `colors.properties`.", 'theme_send': "✅ **Theme {theme_name} ready!**\n\nInstructions: move file to `~/.termux/` and run `termux-reload-settings`.", 'script_cat_menu': "📦 **Script Generator**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'files_menu': "🗂 **File Center**", 'files_empty': "No files yet.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Premium only!", 'premium_menu': "💎 **Premium**\n\n50 Stars for 1 month.", 'btn_buy_premium': "⭐️ Buy for 50 Stars", 'premium_success': "🎉 You are Premium!", 'ai_limit_reached': "⚠️ Limit reached (5/day). Buy Premium.", 'btn_go_premium': "💎 Go Premium", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Add File", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Points to add:", 'admin_points_wait': "⏳ Sending...", 'admin_points_done': "✅ Added {points}!\n📩 Sent: {success}\n❌ Failed: {fail}", 'admin_file_wait': "📂 Send file:", 'admin_file_title': "✍️ File title:", 'admin_file_saved': "✅ Saved!", 'admin_file_cancel': "❌ Cancelled.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Error! Video not found.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Tomorrow!", 'top_text': "🏆 **Top 10:**\n{list}", 'quiz_start': "🧠 **Quiz!** +10 points.\n\n❓ *Question:*", 'quiz_correct': "✅ **Correct!** (+10)", 'quiz_wrong': "❌ **Wrong!** Answer: **{answer}**", 'quiz_end': "🎉 You've answered all questions! Starting over.", 'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Remaining: {limit}", 'java_info_text': "☕ **Java in Termux**\n\n1. Install: `pkg install openjdk-17 -y`\n2. Create: `nano Salom.java`\n3. Code: `public class Salom { ... }`\n4. Run: `javac Salom.java` and `java Salom`",
+        'btn_devtools': "🧰 DevTools", 'streak_btn': "🔥 Daily Streak",
+        'devtools_menu': "🧰 **Developer Tools**", 'devtools_pass': "🔐 Password",
+        'devtools_hash': "🔢 Hash", 'devtools_b64enc': "📝 Base64 Enc", 'devtools_b64dec': "📝 Base64 Dec",
+        'devtools_uuid': "🆔 UUID", 'devtools_qr': "📱 QR", 'devtools_json': "📊 JSON",
+        'devtools_pass_prompt': "🔐 Password length (8-64):", 'devtools_hash_prompt': "🔢 Send text:",
+        'devtools_b64enc_prompt': "📝 Send text:", 'devtools_b64dec_prompt': "📝 Base64:",
+        'devtools_json_prompt': "📊 JSON:", 'devtools_qr_prompt': "📱 Text or link:",
+        'devtools_invalid': "❌ Error: {error}",
+        'streak_claimed': "🔥 **+{reward} points!** (Day {days})\n\n{extra}",
+        'streak_already': "✅ Already claimed today!",
+        'streak_reset_info': "⚠️ Streak reset!", 'streak_7_bonus': "🎉 7 days!", 'streak_30_bonus': "🎉 30 days! Premium!"},
+    'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_files': "🗂 الملفات", 'btn_premium': "💎 بريميوم", 'btn_challenge': "🧩 تحدي يومي", 'btn_theme': "🎨 ثيم Termux", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 الحصول على PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'challenge_menu': "🧩 **تحدي يومي**\n\nحل المشكلة وأرسل الكود. الإجابة الصحيحة تعطيك **+30 نقطة**!", 'challenge_problem': "📝 **المشكلة:**\n\n{text}\n\n💻 *أرسل الكود:*", 'challenge_already_done': "✅ لقد قمت بحل التحدي اليوم بالفعل.", 'challenge_wait': "🤖 AI يتحقق...", 'challenge_correct': "✅ **صحيح!** 🎉\n\nلقد حصلت على **+30 نقطة**!", 'challenge_wrong': "❌ **خطأ!**\n\n{feedback}\n\nصحح الكود وأرسله مرة أخرى.", 'challenge_no_code': "⚠️ أرسل الكود كنص أو ملف.", 'theme_menu': "🎨 **ثيمات Termux**\n\nاختر لوناً. سيرسل البوت ملف `colors.properties`.", 'theme_send': "✅ **الثيم {theme_name} جاهز!**\n\nالتعليمات: انقل الملف إلى `~/.termux/` ثم اكتب `termux-reload-settings`.", 'script_cat_menu': "📦 **مولد**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'files_menu': "🗂 **الملفات**", 'files_empty': "لا توجد ملفات.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 بريميوم فقط!", 'premium_menu': "💎 **بريميوم**\n\n50 نجمة لمدة شهر.", 'btn_buy_premium': "⭐️ شراء بـ 50 نجمة", 'premium_success': "🎉 أنت بريميوم!", 'ai_limit_reached': "⚠️ الحد (5/يوم). اشتري بريميوم.", 'btn_go_premium': "💎 اشتري", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ ملف", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 نقاط:", 'admin_points_wait': "⏳ جاري الإرسال...", 'admin_points_done': "✅ أضيفت {points}!\n📩 المرسل: {success}\n❌ الفشل: {fail}", 'admin_file_wait': "📂 أرسل ملفاً:", 'admin_file_title': "✍️ اسم الملف:", 'admin_file_saved': "✅ تم الحفظ!", 'admin_file_cancel': "❌ ملغي.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ خطأ! الفيديو غير موجود.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ غداً!", 'top_text': "🏆 **أفضل 10:**\n{list}", 'quiz_start': "🧠 **اختبار!** +10 نقاط.\n\n❓ *سؤال:*", 'quiz_correct': "✅ **صحيح!** (+10)", 'quiz_wrong': "❌ **خطأ!** الجواب: **{answer}**", 'quiz_end': "🎉 أجبت على جميع الأسئلة! نبدأ من جديد.", 'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ المتبقي: {limit}", 'java_info_text': "☕ **Java في Termux**\n\n1. التثبيت: `pkg install openjdk-17 -y`\n2. إنشاء: `nano Salom.java`\n3. الكود: `public class Salom { ... }`\n4. التشغيل: `javac Salom.java` و `java Salom`",
+        'btn_devtools': "🧰 أدوات", 'streak_btn': "🔥 سلسلة",
+        'devtools_menu': "🧰 **أدوات المطور**", 'devtools_pass': "🔐 كلمة سر",
+        'devtools_hash': "🔢 Hash", 'devtools_b64enc': "📝 Base64 Enc", 'devtools_b64dec': "📝 Base64 Dec",
+        'devtools_uuid': "🆔 UUID", 'devtools_qr': "📱 QR", 'devtools_json': "📊 JSON",
+        'devtools_pass_prompt': "🔐 الطول (8-64):", 'devtools_hash_prompt': "🔢 أرسل النص:",
+        'devtools_b64enc_prompt': "📝 أرسل النص:", 'devtools_b64dec_prompt': "📝 Base64:",
+        'devtools_json_prompt': "📊 JSON:", 'devtools_qr_prompt': "📱 نص أو رابط:",
+        'devtools_invalid': "❌ خطأ: {error}",
+        'streak_claimed': "🔥 **+{reward} نقطة!** (يوم {days})\n\n{extra}",
+        'streak_already': "✅ تم الحصول عليها اليوم!",
+        'streak_reset_info': "⚠️ تم إعادة التعيين!", 'streak_7_bonus': "🎉 7 أيام!", 'streak_30_bonus': "🎉 30 يوماً! Premium!"}
 }
 
 TIPS = [{'uz': "**Tezroq kod yozish:**\n`nano` o'rniga `micro` ishlating.", 'ru': "**Быстрое написание:**\nИспользуйте `micro`.", 'en': "**Faster coding:**\nUse `micro`.", 'ar': "**برمجة أسرع:**\nاستخدم `micro`."}]
 COMMANDS_DATA = {'files': [('ls', {'uz': 'Fayllar', 'ru': 'Файлы', 'en': 'Files', 'ar': 'ملفات'})], 'packages': [('pkg update', {'uz': 'Yangilash', 'ru': 'Обновить', 'en': 'Update', 'ar': 'تحديث'})], 'network': [('ping google.com', {'uz': 'Tekshirish', 'ru': 'Проверить', 'en': 'Check', 'ar': 'فحص'})], 'system': [('clear', {'uz': 'Tozalash', 'ru': 'Очистить', 'en': 'Clear', 'ar': 'مسح'})]}
 
 # ==========================================
-# KENGAYTIRILGAN TEST BAZASI
+# TEST BAZASI
 # ==========================================
 QUIZ_DATA = [
     {'q': {'uz': "Papka yaratish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда создает папку?", 'en': "Which command creates a folder?", 'ar': "أي أمر ينشئ مجلداً؟"}, 'options': ['mkdir', 'cd', 'ls', 'rm'], 'answer': 'mkdir'},
@@ -367,10 +489,20 @@ QUIZ_DATA = [
 ]
 
 # ==========================================
-# KLAVIATURALAR (IXCHAM 2 USTUNLI VA ADMIN YASHIRIN)
+# KLAVIATURALAR
 # ==========================================
 def get_lang_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")], [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")]])
+
+def get_devtools_keyboard(lang):
+    t = TEXTS[lang]
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t['devtools_pass'], callback_data="dev_pass"), InlineKeyboardButton(t['devtools_hash'], callback_data="dev_hash")],
+        [InlineKeyboardButton(t['devtools_b64enc'], callback_data="dev_b64enc"), InlineKeyboardButton(t['devtools_b64dec'], callback_data="dev_b64dec")],
+        [InlineKeyboardButton(t['devtools_uuid'], callback_data="dev_uuid"), InlineKeyboardButton(t['devtools_qr'], callback_data="dev_qr")],
+        [InlineKeyboardButton(t['devtools_json'], callback_data="dev_json")],
+        [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
+    ])
 
 def get_main_menu(lang, user_id):
     t = TEXTS[lang]
@@ -382,14 +514,12 @@ def get_main_menu(lang, user_id):
         [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
         [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start"), InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
         [InlineKeyboardButton(t['btn_top'], callback_data="top_users"), InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
-        [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
+        [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['streak_btn'], callback_data="daily_bonus")],
+        [InlineKeyboardButton(t['btn_devtools'], callback_data="devtools_menu"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
         [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
     ]
-    
-    # FAQAT ADMIN UCHUN KO'RINADIGAN TUGMA
     if user_id == ADMIN_ID:
         keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")])
-        
     return InlineKeyboardMarkup(keyboard)
 
 def get_theme_keyboard(lang):
@@ -444,7 +574,7 @@ def get_admin_keyboard(lang):
         [InlineKeyboardButton(t['admin_btn_stats'], callback_data="admin_stats")],
         [InlineKeyboardButton(t['admin_btn_bcast'], callback_data="admin_bcast")],
         [InlineKeyboardButton(t['admin_btn_points'], callback_data="admin_points")],
-        [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_add_file")], 
+        [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_add_file")],
         [InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_close")]
     ])
 
@@ -458,17 +588,17 @@ def get_sub_keyboard(lang):
 def get_profile_keyboard(lang):
     t = TEXTS[lang]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t['btn_daily_bonus'], callback_data="daily_bonus")],
+        [InlineKeyboardButton(t['streak_btn'], callback_data="daily_bonus")],
         [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
     ])
 
 def get_sec_menu(lang):
     t = TEXTS[lang]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t['sec_info'], callback_data="sec_cat_info")], 
-        [InlineKeyboardButton(t['sec_pass'], callback_data="sec_cat_pass")], 
-        [InlineKeyboardButton(t['sec_exploit'], callback_data="sec_cat_exploit")], 
-        [InlineKeyboardButton(t['sec_network'], callback_data="sec_cat_network")], 
+        [InlineKeyboardButton(t['sec_info'], callback_data="sec_cat_info")],
+        [InlineKeyboardButton(t['sec_pass'], callback_data="sec_cat_pass")],
+        [InlineKeyboardButton(t['sec_exploit'], callback_data="sec_cat_exploit")],
+        [InlineKeyboardButton(t['sec_network'], callback_data="sec_cat_network")],
         [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
     ])
 
@@ -510,7 +640,6 @@ def get_quiz_keyboard(options, correct_answer, lang):
     keyboard, row = [], []
     shuffled_options = options.copy()
     random.shuffle(shuffled_options)
-    
     for opt in shuffled_options:
         row.append(InlineKeyboardButton(opt, callback_data=f"quiz_ans_{opt}"))
         if len(row) == 2:
@@ -527,7 +656,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
-    
+
     if not await is_subscribed(user_id, context):
         await update.message.reply_text(t['force_sub_text'], reply_markup=get_sub_keyboard(lang), parse_mode='Markdown')
         return
@@ -563,13 +692,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         files = await get_all_files()
         if not files:
             return await query.answer(t['files_empty'], show_alert=True)
-        
         keyboard = []
         for f in files:
             lock = "🔒 " if f['is_premium'] else "📄 "
             keyboard.append([InlineKeyboardButton(f"{lock}{f['title']}", callback_data=f"get_file_{f['id']}")])
         keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
-        
         await edit_or_send(query, context, t['files_menu'], InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("get_file_"):
@@ -578,10 +705,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with db_pool.acquire() as conn:
             file_data = await conn.fetchrow('SELECT * FROM files WHERE id = $1', file_id)
             user = await conn.fetchrow('SELECT is_premium FROM users WHERE user_id = $1', user_id)
-        
         if file_data['is_premium'] and not user['is_premium'] and user_id != ADMIN_ID:
             return await query.answer(t['file_premium_locked'], show_alert=True)
-            
         await query.answer(t['file_sending'])
         try:
             if file_data['file_type'] == 'document':
@@ -590,7 +715,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_video(chat_id=chat_id, video=file_data['file_id'], caption=f"🎬 {file_data['title']}")
             elif file_data['file_type'] == 'photo':
                 await context.bot.send_photo(chat_id=chat_id, photo=file_data['file_id'], caption=f"🖼 {file_data['title']}")
-        except Exception as e:
+        except Exception:
             await context.bot.send_message(chat_id=chat_id, text=f"❌ Xatolik: Faylni yuborib bo'lmadi.")
 
     elif data == "premium_menu":
@@ -602,17 +727,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = "premium_sub_payload"
         currency = "XTR"
         prices = [LabeledPrice("Premium Obuna", 50)]
-        
         try:
             await context.bot.send_invoice(
-                chat_id=chat_id,
-                title=title,
-                description=description,
-                payload=payload,
-                provider_token="",
-                currency=currency,
-                prices=prices,
-                start_parameter="premium-subscription"
+                chat_id=chat_id, title=title, description=description,
+                payload=payload, provider_token="", currency=currency,
+                prices=prices, start_parameter="premium-subscription"
             )
         except Exception as e:
             logging.error(f"To'lov yuborishda xatolik: {e}")
@@ -621,17 +740,13 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "challenge_start":
         profile = await get_user_profile(user_id)
         today = datetime.date.today()
-        
         if profile['last_challenge_date'] == today and user_id != ADMIN_ID:
             return await query.answer(t['challenge_already_done'], show_alert=True)
-            
         challenge = random.choice(CHALLENGES_DATA)
         context.user_data['current_challenge'] = challenge['text']
         context.user_data['state'] = 'in_challenge'
-        
         text = t['challenge_problem'].format(text=challenge['text'])
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
-        
         await edit_or_send(query, context, text, keyboard)
 
     elif data == "theme_menu":
@@ -641,7 +756,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         theme_key = data.replace("theme_apply_", "")
         theme = THEMES_DATA.get(theme_key)
         if not theme: return
-        
         properties_content = f"""background={theme['bg']}
 foreground={theme['fg']}
 cursor={theme['cursor']}
@@ -664,7 +778,6 @@ color15=#ffffff
 """
         prop_file = BytesIO(properties_content.encode('utf-8'))
         prop_file.name = "colors.properties"
-        
         text = t['theme_send'].format(theme_name=theme['name'])
         await context.bot.send_document(chat_id=chat_id, document=prop_file, caption=text, parse_mode='Markdown')
 
@@ -698,9 +811,7 @@ color15=#ffffff
     elif data == "script_generate":
         selected = context.user_data.get('selected_scripts', [])
         if not selected: return await query.answer(t['script_empty'], show_alert=True)
-        
         script_content = "#!/data/data/com.termux/files/usr/bin/bash\n\n# Ranglar\nGREEN='\\033[0;32m'\nCYAN='\\033[0;36m'\nRED='\\033[0;31m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\nclear\necho -e \"${CYAN}========================================${NC}\"\necho -e \"${GREEN}🚀 TERMUX SUPER AVTOMATIK O'RNATUVCHI 🚀${NC}\"\necho -e \"${CYAN}========================================${NC}\"\necho -e \"${YELLOW}Yaratuvchi: @Tommy_1727${NC}\"\necho -e \"\"\n\necho -e \"${GREEN}[1/3] Tizim yangilanmoqda...${NC}\"\npkg update -y && pkg upgrade -y || { echo -e \"${RED}❌ Yangilashda xatolik!${NC}\"; exit 1; }\n\necho -e \"${GREEN}[2/3] Kerakli paketlar o'rnatilmoqda...${NC}\"\n"
-        
         pkg_installs, pip_installs, custom_commands = [], [], []
         for script_id in selected:
             cat_key, item_key = script_id.split("_", 1)
@@ -708,7 +819,6 @@ color15=#ffffff
             if item_data['type'] == 'pkg' and item_data['pkg'] not in pkg_installs: pkg_installs.append(item_data['pkg'])
             elif item_data['type'] == 'pip' and item_data['pkg'] not in pip_installs: pip_installs.append(item_data['pkg'])
             elif item_data['type'] == 'custom': custom_commands.append(item_data['pkg'])
-
         if pkg_installs: script_content += f"pkg install -y {' '.join(pkg_installs)}\n"
         if custom_commands:
             script_content += "\necho -e \"${GREEN}[*] Qo'shimcha sozlamalar...${NC}\"\n"
@@ -717,9 +827,7 @@ color15=#ffffff
             script_content += f"\necho -e \"${{GREEN}}[3/3] Python kutubxonalari...${{NC}}\"\n"
             script_content += "pip install --upgrade pip || true\n"
             script_content += f"pip install {' '.join(pip_installs)}\n"
-
         script_content += "\necho -e \"${CYAN}========================================${NC}\"\necho -e \"${GREEN}✅ BARCHA DASTURLAR O'RNATILDI!${NC}\"\necho -e \"${CYAN}========================================${NC}\"\n"
-        
         script_file = BytesIO(script_content.encode('utf-8'))
         script_file.name = "install.sh"
         await context.bot.send_document(chat_id=chat_id, document=script_file, caption=t['script_done'], parse_mode='Markdown')
@@ -766,21 +874,31 @@ color15=#ffffff
         if not profile: return await query.answer("Xatolik: /start bosing.")
         level = get_level(profile['score'])
         status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
+        streak = profile.get('streak_days', 0) or 0
         text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
+        text += f"\n🔥 **Streak:** {streak} kun"
         await edit_or_send(query, context, text, get_profile_keyboard(lang))
     elif data == "daily_bonus":
-        success = await claim_daily_bonus(user_id)
-        if success:
-            await query.answer(t['bonus_claimed'], show_alert=True)
-            profile = await get_user_profile(user_id)
-            level = get_level(profile['score'])
-            status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
-            text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
-            await edit_or_send(query, context, text, get_profile_keyboard(lang))
-        else:
-            await query.answer(t['bonus_wait'], show_alert=True)
+        success, streak_days, reward, is_reset, is_already = await claim_streak(user_id)
+        if is_already:
+            return await query.answer(t['streak_already'], show_alert=True)
+        if not success:
+            return await query.answer("❌ Xatolik. /start bosing.", show_alert=True)
+        extra = ""
+        if streak_days == 7: extra = t['streak_7_bonus']
+        elif streak_days == 30: extra = t['streak_30_bonus']
+        elif is_reset: extra = t['streak_reset_info']
+        await query.answer(f"🔥 +{reward} ball! (Kun: {streak_days})", show_alert=True)
+        profile = await get_user_profile(user_id)
+        level = get_level(profile['score'])
+        status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
+        profile_text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
+        profile_text += f"\n🔥 **Streak:** {streak_days} kun"
+        profile_text += f"\n🎁 **Oxirgi mukofot:** +{reward} ball"
+        if extra: profile_text += f"\n\n{extra}"
+        await edit_or_send(query, context, profile_text, get_profile_keyboard(lang))
     elif data == "top_users":
-        top_users = await get_top_users() 
+        top_users = await get_top_users()
         top_list = ""
         for i, u in enumerate(top_users):
             medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
@@ -791,17 +909,13 @@ color15=#ffffff
     elif data == "quiz_start":
         if 'seen_questions' not in context.user_data:
             context.user_data['seen_questions'] = []
-            
         if len(context.user_data['seen_questions']) >= len(QUIZ_DATA):
             context.user_data['seen_questions'] = []
             await query.message.reply_text(t['quiz_end'])
-            
         available_indices = [i for i in range(len(QUIZ_DATA)) if i not in context.user_data['seen_questions']]
-        
         chosen_idx = random.choice(available_indices)
         context.user_data['seen_questions'].append(chosen_idx)
         context.user_data['current_quiz'] = QUIZ_DATA[chosen_idx]
-        
         question_data = QUIZ_DATA[chosen_idx]
         text = t['quiz_start'] + f"\n\n❓ **{question_data['q'][lang]}**"
         await edit_or_send(query, context, text, get_quiz_keyboard(question_data['options'], question_data['answer'], lang))
@@ -810,16 +924,13 @@ color15=#ffffff
         selected_ans = data.replace("quiz_ans_", "")
         question_data = context.user_data.get('current_quiz')
         if not question_data: return await query.answer("Xatolik.")
-        
-        context.user_data['current_quiz'] = None 
+        context.user_data['current_quiz'] = None
         correct_ans = question_data['answer']
-        
         if selected_ans == correct_ans:
             text = t['quiz_correct']
             await add_score(user_id, 10)
         else:
             text = t['quiz_wrong'].format(answer=correct_ans)
-            
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_next_quiz'], callback_data="quiz_start")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
         await edit_or_send(query, context, text, keyboard)
 
@@ -828,7 +939,6 @@ color15=#ffffff
         if not can_use:
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_go_premium'], callback_data="premium_menu")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
             return await edit_or_send(query, context, t['ai_limit_reached'], keyboard)
-            
         context.user_data['state'] = 'in_ai'
         prompt_text = t['ai_prompt']
         if limit_left < 999:
@@ -836,13 +946,13 @@ color15=#ffffff
         await edit_or_send(query, context, prompt_text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
     elif data == "sec_start":
         await edit_or_send(query, context, t['sec_menu'], get_sec_menu(lang))
-    elif data == "sec_cat_info": 
+    elif data == "sec_cat_info":
         await edit_or_send(query, context, t['sec_info_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
-    elif data == "sec_cat_pass": 
+    elif data == "sec_cat_pass":
         await edit_or_send(query, context, t['sec_pass_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
-    elif data == "sec_cat_exploit": 
+    elif data == "sec_cat_exploit":
         await edit_or_send(query, context, t['sec_exploit_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
-    elif data == "sec_cat_network": 
+    elif data == "sec_cat_network":
         await edit_or_send(query, context, t['sec_network_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
     elif data == "support_start":
         context.user_data['state'] = 'in_support'
@@ -879,7 +989,7 @@ color15=#ffffff
         page = int(data.split("_")[1])
         text = t['text_page'].format(page=page)
         await edit_or_send(query, context, text, get_lessons_keyboard(page, lang))
-        
+
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS.get(lesson_num, lesson_num + 2)
@@ -890,7 +1000,7 @@ color15=#ffffff
         except TelegramError as e:
             logging.error(f"Video nusxalashda xatolik (ID: {message_id}): {e}")
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
-            
+
     elif data == "lua_page_1":
         await edit_or_send(query, context, t['text_lua'], get_lua_lessons_keyboard(lang))
     elif data.startswith("lua_lesson_"):
@@ -903,24 +1013,51 @@ color15=#ffffff
         try:
             await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=video_keyboard)
             await query.message.delete()
-        except TelegramError as e: 
+        except TelegramError as e:
             logging.error(f"Lua video xatosi (ID: {message_id}): {e}")
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
     elif data == "python_extra":
         try:
-            for v_id in PYTHON_EXTRA_VIDEOS: 
+            for v_id in PYTHON_EXTRA_VIDEOS:
                 await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=v_id)
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="lua_page_1")]])
             await context.bot.send_message(chat_id=chat_id, text=t['text_python_done'], reply_markup=back_kb)
-        except TelegramError as e: 
+        except TelegramError as e:
             logging.error(f"Python video xatosi: {e}")
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
     elif data == "back_to_start":
         context.user_data['state'] = None
         await edit_or_send(query, context, t['welcome'], get_main_menu(lang, user_id))
 
+    # ============ DEVTOOLS ============
+    elif data == "devtools_menu":
+        await edit_or_send(query, context, t['devtools_menu'], get_devtools_keyboard(lang))
+    elif data == "dev_pass":
+        context.user_data['state'] = 'in_dev_pass'
+        await edit_or_send(query, context, t['devtools_pass_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]]))
+    elif data == "dev_hash":
+        context.user_data['state'] = 'in_dev_hash'
+        await edit_or_send(query, context, t['devtools_hash_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]]))
+    elif data == "dev_b64enc":
+        context.user_data['state'] = 'in_dev_b64enc'
+        await edit_or_send(query, context, t['devtools_b64enc_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]]))
+    elif data == "dev_b64dec":
+        context.user_data['state'] = 'in_dev_b64dec'
+        await edit_or_send(query, context, t['devtools_b64dec_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]]))
+    elif data == "dev_uuid":
+        new_uuid = str(uuid.uuid4())
+        text = f"🆔 **UUID v4:**\n\n`{new_uuid}`"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Yana", callback_data="dev_uuid")], [InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+        await edit_or_send(query, context, text, kb)
+    elif data == "dev_qr":
+        context.user_data['state'] = 'in_dev_qr'
+        await edit_or_send(query, context, t['devtools_qr_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]]))
+    elif data == "dev_json":
+        context.user_data['state'] = 'in_dev_json'
+        await edit_or_send(query, context, t['devtools_json_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]]))
+
 # ==========================================
-# PRE-CHECKOUT VA TO'LOVNI QABUL QILISH
+# TO'LOV
 # ==========================================
 async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
@@ -933,14 +1070,13 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     user_id = update.effective_user.id
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
-    
     payment_info = update.message.successful_payment
     if payment_info.invoice_payload == "premium_sub_payload":
         await make_premium(user_id)
         await update.message.reply_text(t['premium_success'], parse_mode='Markdown', reply_markup=get_main_menu(lang, user_id))
 
 # ==========================================
-# AI LOGIKASI
+# AI
 # ==========================================
 async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -950,13 +1086,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_subscribed(user_id, context):
         await update.message.reply_text(t['force_sub_text'], reply_markup=get_sub_keyboard(lang), parse_mode='Markdown')
         return
-
     if not any([openrouter_client, mistral_client, groq_client, gemini_client]):
         await update.message.reply_text("❌ AI xizmatlari sozlanmagan.")
         return
-    
-    msg = await update.message.reply_text(t['ai_wait'])
 
+    msg = await update.message.reply_text(t['ai_wait'])
     try:
         user_query, image_bytes, is_image = "", None, False
         if update.message.text:
@@ -1022,15 +1156,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if code_match:
             code_text = code_match.group(1).strip()
             if "lua" in user_query.lower() or (update.message.document and update.message.document.file_name.endswith('.lua')):
-                filename = "code.lua"
-                lang_name = "Lua"
+                filename = "code.lua"; lang_name = "Lua"
             elif "java" in user_query.lower() or (update.message.document and update.message.document.file_name.endswith('.java')):
-                filename = "Main.java"
-                lang_name = "Java"
+                filename = "Main.java"; lang_name = "Java"
             else:
-                filename = "code.py"
-                lang_name = "Python"
-                
+                filename = "code.py"; lang_name = "Python"
             code_file = BytesIO(code_text.encode('utf-8'))
             code_file.name = filename
             await context.bot.send_document(chat_id=update.message.chat_id, document=code_file, caption=f"🤖 Kod fayli ({lang_name})\n\nFayl: {filename}\n\n{t['ai_code_found']}")
@@ -1039,27 +1169,22 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.delete()
         else:
             await msg.edit_text(t['ai_no_code'].format(text=ai_reply))
-
     except Exception as e:
         await msg.edit_text(t['ai_error'].format(error=str(e)[:100]))
 
 # ==========================================
-# KUNLIK MASALANI QABUL QILISH (CHALLENGE)
+# CHALLENGE
 # ==========================================
 async def handle_challenge_solution(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
     challenge_text = context.user_data.get('current_challenge')
-    
     user_code = update.message.text or (await update.message.document.get_file()).file_id if update.message.document else None
     if not user_code:
         return await update.message.reply_text(t['challenge_no_code'])
-
     msg = await update.message.reply_text(t['challenge_wait'])
-    
     eval_prompt = f"Foydalanuvchi quyidagi masalani yechish uchun kod yubordi:\nMasala: {challenge_text}\n\nKod:\n{user_code}\n\nKodni tekshir. Agar to'g'ri bo'lsa faqat 'CORRECT' deb javob ber. Agar xato bo'lsa, 'INCORRECT: [xatolik sababi]' deb javob ber. Hech qanday qo'shimcha gap yozma."
-
     ai_reply = ""
     try:
         if openrouter_client:
@@ -1070,7 +1195,6 @@ async def handle_challenge_solution(update: Update, context: ContextTypes.DEFAUL
             ai_reply = response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"Challenge eval error: {e}")
-
     if "CORRECT" in ai_reply.upper():
         await add_score(user_id, 30)
         await update_challenge_date(user_id)
@@ -1082,13 +1206,88 @@ async def handle_challenge_solution(update: Update, context: ContextTypes.DEFAUL
         await msg.edit_text(t['challenge_wrong'].format(feedback=feedback), parse_mode='Markdown')
 
 # ==========================================
-# XABARLARNI QABUL QILISH VA ADMIN
+# XABARLARNI QABUL QILISH
 # ==========================================
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
-    
+
+    # DEVTOOLS HANDLERS
+    if context.user_data.get('state') == 'in_dev_pass':
+        context.user_data['state'] = None
+        if not update.message.text or not update.message.text.strip().isdigit():
+            return await update.message.reply_text(t['devtools_invalid'].format(error="Faqat raqam yuboring."), parse_mode='Markdown')
+        length = int(update.message.text.strip())
+        if length < 8 or length > 64:
+            return await update.message.reply_text(t['devtools_invalid'].format(error="8-64 orasida bo'lishi kerak."), parse_mode='Markdown')
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+        password = ''.join(secrets.choice(alphabet) for _ in range(length))
+        strength = "🟢 Kuchli" if length >= 16 else "🟡 O'rta" if length >= 12 else "🔴 Zaif"
+        text = f"🔐 **Parolingiz:**\n\n`{password}`\n\n💪 Kuchlilik: {strength}\n📏 Uzunlik: {length}"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Yana", callback_data="dev_pass")], [InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+        return await update.message.reply_text(text, parse_mode='Markdown', reply_markup=kb)
+
+    if context.user_data.get('state') == 'in_dev_hash':
+        context.user_data['state'] = None
+        if not update.message.text: return
+        txt = update.message.text
+        result = (
+            f"🔢 **Hash natijalari:**\n\n"
+            f"**MD5:**\n`{hashlib.md5(txt.encode()).hexdigest()}`\n\n"
+            f"**SHA1:**\n`{hashlib.sha1(txt.encode()).hexdigest()}`\n\n"
+            f"**SHA256:**\n`{hashlib.sha256(txt.encode()).hexdigest()}`\n\n"
+            f"**SHA512:**\n`{hashlib.sha512(txt.encode()).hexdigest()}`"
+        )
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+        return await update.message.reply_text(result, parse_mode='Markdown', reply_markup=kb)
+
+    if context.user_data.get('state') == 'in_dev_b64enc':
+        context.user_data['state'] = None
+        if not update.message.text: return
+        encoded = base64.b64encode(update.message.text.encode()).decode()
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+        return await update.message.reply_text(f"📝 **Base64 Encoded:**\n\n`{encoded}`", parse_mode='Markdown', reply_markup=kb)
+
+    if context.user_data.get('state') == 'in_dev_b64dec':
+        context.user_data['state'] = None
+        if not update.message.text: return
+        try:
+            decoded = base64.b64decode(update.message.text.encode()).decode()
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+            await update.message.reply_text(f"📝 **Base64 Decoded:**\n\n`{decoded}`", parse_mode='Markdown', reply_markup=kb)
+        except Exception:
+            await update.message.reply_text(t['devtools_invalid'].format(error="Noto'g'ri Base64."), parse_mode='Markdown')
+        return
+
+    if context.user_data.get('state') == 'in_dev_qr':
+        context.user_data['state'] = None
+        if not update.message.text: return
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={quote(update.message.text)}"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+        try:
+            await update.message.reply_photo(photo=qr_url, caption=f"📱 **QR Code:**\n`{update.message.text[:100]}`", parse_mode='Markdown', reply_markup=kb)
+        except Exception as e:
+            await update.message.reply_text(t['devtools_invalid'].format(error=str(e)[:50]))
+        return
+
+    if context.user_data.get('state') == 'in_dev_json':
+        context.user_data['state'] = None
+        if not update.message.text: return
+        try:
+            parsed = json_lib.loads(update.message.text)
+            formatted = json_lib.dumps(parsed, indent=2, ensure_ascii=False)
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="devtools_menu")]])
+            if len(formatted) > 3500:
+                json_file = BytesIO(formatted.encode('utf-8'))
+                json_file.name = "formatted.json"
+                await update.message.reply_document(document=json_file, caption="📊 JSON formatted", reply_markup=kb)
+            else:
+                await update.message.reply_text(f"📊 **JSON Formatted:**\n\n`{formatted}`", parse_mode='Markdown', reply_markup=kb)
+        except json_lib.JSONDecodeError as e:
+            await update.message.reply_text(t['devtools_invalid'].format(error=str(e)[:80]), parse_mode='Markdown')
+        return
+
     if context.user_data.get('state') == 'in_ai':
         await handle_ai_message(update, context); return
 
@@ -1100,7 +1299,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if update.message.document: file_id = update.message.document.file_id; ftype = 'document'
             elif update.message.video: file_id = update.message.video.file_id; ftype = 'video'
             else: file_id = update.message.photo[-1].file_id; ftype = 'photo'
-            
             context.user_data['temp_file_id'] = file_id
             context.user_data['temp_file_type'] = ftype
             context.user_data['state'] = 'in_file_title'
@@ -1117,7 +1315,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = update.message.text
             file_id = context.user_data.get('temp_file_id')
             ftype = context.user_data.get('temp_file_type')
-            await add_file_db(title, file_id, ftype, is_premium=False) 
+            await add_file_db(title, file_id, ftype, is_premium=False)
             await update.message.reply_text(t['admin_file_saved'])
             context.user_data['state'] = None
         elif update.message.text == "/cancel":
@@ -1129,27 +1327,22 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.text.isdigit():
             points = int(update.message.text)
             await add_score_all(points)
-            
             msg = await update.message.reply_text(t['admin_points_wait'], parse_mode='Markdown')
-            
             success, fail = 0, 0
             total_users = 0
             if db_pool:
                 async with db_pool.acquire() as conn:
                     users = await conn.fetch('SELECT user_id FROM users')
                     total_users = len(users)
-                
                 broadcast_text = f"🎁 **Aksiya!**\n\nAdmin tomonidan barcha foydalanuvchilarga **+{points} ball** qo'shildi! 🎉\n\nProfilingizga kirib tekshirishingiz mumkin."
-                
                 for u in users:
                     if u['user_id'] == ADMIN_ID: continue
                     try:
                         await context.bot.send_message(chat_id=u['user_id'], text=broadcast_text, parse_mode='Markdown')
                         success += 1
-                        await asyncio.sleep(0.05) 
+                        await asyncio.sleep(0.05)
                     except Exception:
                         fail += 1
-                        
             await msg.edit_text(t['admin_points_done'].format(points=points, success=success, fail=fail), parse_mode='Markdown')
             context.user_data['state'] = None
         else:
@@ -1188,7 +1381,6 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with db_pool.acquire() as conn:
         users = await conn.fetch('SELECT user_id FROM users')
         total_users = len(users)
-        
     success, fail = 0, 0
     for u in users:
         if u['user_id'] == ADMIN_ID: continue
@@ -1196,7 +1388,6 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.copy_message(chat_id=u['user_id'], from_chat_id=update.message.chat_id, message_id=update.message.message_id)
             success += 1; await asyncio.sleep(0.05)
         except Exception: fail += 1
-        
     context.user_data['state'] = None
     await msg.edit_text(f"✅ Yakunlandi!\nBazada jami: {total_users} ta\nYuborildi: {success}\nXatolik: {fail}")
 
@@ -1210,7 +1401,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("admin", admin_panel)) 
+application.add_handler(CommandHandler("admin", admin_panel))
 application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
 application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 application.add_handler(CallbackQueryHandler(button_tap))
@@ -1239,7 +1430,7 @@ async def telegram_webhook(request: Request):
     return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(): 
+async def read_root():
     return FileResponse("index.html")
 
 if __name__ == "__main__":
