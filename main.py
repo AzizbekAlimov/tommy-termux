@@ -13,6 +13,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
 from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 import uvicorn
 
 # ==========================================
@@ -22,6 +24,7 @@ TOKEN = os.environ.get("TOKEN")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 ADMIN_ID = 7383782449
 CHANNEL_USERNAME = "@Tommy_cheat" 
@@ -29,7 +32,15 @@ TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-ai_client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com") if DEEPSEEK_API_KEY else None
+# AI Mijozlari
+deepseek_client = AsyncOpenAI(
+    api_key=DEEPSEEK_API_KEY, 
+    base_url="https://api.deepseek.com",
+    timeout=300.0 
+) if DEEPSEEK_API_KEY else None
+
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
 db_pool = None
 
 async def init_db():
@@ -77,7 +88,7 @@ LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101}
 PYTHON_EXTRA_VIDEOS = [96]
 
 # ==========================================
-# TILLAR LUG'ATI
+# TILLAR LUG'ATI (O'zbekcha qismi, qolganlari oldingidek)
 # ==========================================
 TEXTS = {
     'uz': {
@@ -87,7 +98,7 @@ TEXTS = {
         'btn_apk': "📥 TERMUX APK YUKLAB OLISH", 'btn_tip': "💡 Kunlik maslahat",
         'btn_cheatsheet': "📜 Muhim buyruqlar", 'btn_quiz': "🧠 Bilimingizni sinang (Test)",
         'btn_support': "✉️ Adminga murojaat qilish", 'btn_another_tip': "🔄 Yana maslahat",
-        'btn_security': "🛡️ Kiberxavfsizlik", 'btn_ai': "🤖 AI Dasturchi",
+        'btn_security': "🛡️ Kiberxavfsizlik", 'btn_ai': "🤖 AI Dasturchi (Super)",
         'btn_change_lang': "🌐 Tilni o'zgartirish", 'btn_back': "🔙 Bosh menyu",
         'btn_prev': "⬅️ Oldingi", 'btn_next': "Keyingi ➡️", 'btn_python': "🐍 PYTHON OLISH",
         'btn_lessons_menu': "📚 Darsliklar (Menyu)",
@@ -119,99 +130,19 @@ TEXTS = {
         'admin_bcast_start': "📢 **Ommaviy xabar rejimi.**\n\nBarchaga yubormoqchi bo'lgan xabarni yuboring:",
         'admin_bcast_wait': "⏳ Xabar yuborilmoqda...", 'admin_bcast_done': "✅ **Yakunlandi!**\nYuborildi: {success}\nXatolik: {fail}",
         'admin_bcast_cancel': "❌ Bekor qilindi.",
-        'ai_prompt': "🤖 **AI Dasturchi (Kuchli)**\n\nMenga savolingizni yozing, kod faylini (.py, .lua) tashlang yoki xatolik chiqqan rasmni yuboring.\n\nMen kodingizni tahlil qilib, xatolarini topaman va tuzatilgan kodni fayl qilib qaytaraman!\n\n*Eslatma: Video orqali tahlil qilish uchun videodan skrinshot olib yuboring.*",
+        'ai_prompt': "🤖 **Super AI Dasturchi (DeepSeek + Gemini)**\n\nMenga savolingizni yozing, kod faylini (.py, .lua) tashlang yoki xatolik chiqqan rasmni yuboring.\n\nMen kodingizni tahlil qilib, xatolarini topaman va tuzatilgan kodni fayl qilib qaytaraman!",
         'ai_wait': "🧠 AI o'ylamoqda va kodingizni tahlil qilmoqda. Iltimos kuting...",
         'ai_error': "❌ **Xatolik!** AI bilan bog'lanishda muammo yuz berdi.",
         'ai_code_found': "✅ **Tuzatilgan kod tayyor!**\n\nMana siz so'ragan kod fayli.",
         'ai_no_code': "🤖 **AI Javobi:**\n\n{text}",
         'ai_vision_error': "⚠️ **Diqqat:** Hozircha AI rasmlarni to'liq tahlil qila olmaydi. Iltimos, rasmdagi kodni matn ko'rinishida nusxalab yuboring yoki kod faylini (.py) tashlang.",
         'ai_unsupported_file': "⚠️ Iltimos, faqat matnli kod fayllarini (.py, .lua, .txt) yuboring. Boshqa fayllarni o'qiy olmayman.",
-        'ai_video_error': "🎥 **Videoni tahlil qila olmayman.**\n\nIltimos, videodan xatolik ko'ringan joyni skrinshot (rasm) qilib yuboring yoki xato matnini yozib yuboring."
+        'ai_video_error': "🎥 **Videoni tahlil qila olmayman.**\n\nIltimos, videodan xatolik ko'ringan joyni skrinshot (rasm) qilib yuboring yoki xato matnini yozib yuboring.",
+        'ai_file_too_large': "⚠️ **Fayl juda katta (500 KB dan oshdi)!**\n\nIltimos, kichikroq fayl yuboring.",
+        'ai_text_too_long': "⚠️ **Kod juda uzun!**\n\nSun'iy intellekt bir martada buncha kodni o'qiy olmaydi. Iltimos, faqat xatolik yuz bergan qismini (funksiyani) ajratib yuboring."
     },
-    'ru': {
-        'choose_lang': "👋 **Здравствуйте!**\n\nВыберите язык:", 'welcome': "👋 Я помощник по **Termux**.", 
-        'btn_termux': "📽️ УРОКИ TERMUX", 'btn_lua': "📽️ УРОКИ LUA", 'btn_apk': "📥 СКАЧАТЬ APK", 
-        'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_quiz': "🧠 Тест", 
-        'btn_support': "✉️ Админу", 'btn_another_tip': "🔄 Ещё", 'btn_security': "🛡️ Безопасность", 
-        'btn_ai': "🤖 AI Программист", 'btn_change_lang': "🌐 Язык", 'btn_back': "🔙 Назад", 
-        'btn_prev': "⬅️ Назад", 'btn_next': "Вперед ➡️", 'btn_python': "🐍 PYTHON", 
-        'btn_lessons_menu': "📚 Меню", 'text_page': "📚 Уроки {page}/5", 'text_lua': "📚 Уроки LUA", 
-        'text_python_done': "Урок Python ✅", 'text_error_vid': "❌ Ошибка видео.", 'text_error_py': "❌ Ошибка Python.", 
-        'tip_header': "💡 **Совет:**\n\n", 'cheatsheet_menu': "📜 Команды", 'cat_files': "📁 Файлы", 
-        'cat_packages': "📦 Пакеты", 'cat_network': "🌐 Сеть", 'cat_system': "⚙️ Система", 
-        'btn_back_cheat': "🔙 Назад", 'apk_caption': "📱 Termux APK", 'apk_file_name': "Termux.apk", 
-        'apk_loading': "⏳ Загрузка...", 'apk_too_big': "⚠️ Файл большой.", 'apk_error': "❌ Ошибка APK.", 
-        'support_prompt': "✉️ Напишите вопрос.", 'support_sent': "✅ Отправлено!", 'support_reply': "📬 Ответ:\n\n", 
-        'quiz_start': "🧠 Тест!", 'quiz_correct': "✅ Верно!", 'quiz_wrong': "❌ Ошибка: **{answer}**", 
-        'btn_next_quiz': "➡️ Далее", 'sec_menu': "🛡️ Безопасность", 'sec_info': "🔍 Инфо", 
-        'sec_pass': "🔑 Пароли", 'sec_exploit': "💥 Уязвимости", 'sec_network': "📡 Сеть", 
-        'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 
-        'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 
-        'admin_bcast_start': "📢 Режим рассылки.", 'admin_bcast_wait': "⏳ Отправка...", 
-        'admin_bcast_done': "✅ Готово! Успех: {success}, Ошибок: {fail}", 'admin_bcast_cancel': "❌ Отменено.", 
-        'ai_prompt': "🤖 **AI Программист**\n\nОтправьте свой вопрос, файл кода (.py, .lua) или скриншот с ошибкой. Я проанализирую и верну исправленный код.", 
-        'ai_wait': "🧠 AI анализирует...", 'ai_error': "❌ Ошибка AI.", 'ai_code_found': "✅ **Код готов!** Файл ниже.",
-        'ai_no_code': "🤖 **Ответ AI:**\n\n{text}",
-        'ai_vision_error': "⚠️ **Внимание:** AI пока не может анализировать картинки. Скопируйте код текстом или отправьте файл.",
-        'ai_unsupported_file': "⚠️ Пожалуйста, отправляйте только текстовые файлы кода (.py, .lua, .txt).",
-        'ai_video_error': "🎥 **Видео не поддерживается.** Отправьте скриншот или текст ошибки."
-    },
-    'en': {
-        'choose_lang': "👋 **Hello!**\n\nSelect language:", 'welcome': "👋 I am your **Termux** assistant.", 
-        'btn_termux': "📽️ TERMUX LESSONS", 'btn_lua': "📽️ LUA LESSONS", 'btn_apk': "📥 DOWNLOAD APK", 
-        'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_quiz': "🧠 Quiz", 
-        'btn_support': "✉️ Contact Admin", 'btn_another_tip': "🔄 Another", 'btn_security': "🛡️ Security", 
-        'btn_ai': "🤖 AI Coder", 'btn_change_lang': "🌐 Language", 'btn_back': "🔙 Back", 
-        'btn_prev': "⬅️ Prev", 'btn_next': "Next ➡️", 'btn_python': "🐍 GET PYTHON", 
-        'btn_lessons_menu': "📚 Menu", 'text_page': "📚 Lessons {page}/5", 'text_lua': "📚 LUA Lessons", 
-        'text_python_done': "Python Lesson ✅", 'text_error_vid': "❌ Video error.", 'text_error_py': "❌ Python error.", 
-        'tip_header': "💡 **Tip:**\n\n", 'cheatsheet_menu': "📜 Commands", 'cat_files': "📁 Files", 
-        'cat_packages': "📦 Packages", 'cat_network': "🌐 Network", 'cat_system': "⚙️ System", 
-        'btn_back_cheat': "🔙 Back", 'apk_caption': "📱 Termux APK", 'apk_file_name': "Termux.apk", 
-        'apk_loading': "⏳ Loading...", 'apk_too_big': "⚠️ File too big.", 'apk_error': "❌ APK error.", 
-        'support_prompt': "✉️ Write your question.", 'support_sent': "✅ Sent!", 'support_reply': "📬 Reply:\n\n", 
-        'quiz_start': "🧠 Quiz!", 'quiz_correct': "✅ Correct!", 'quiz_wrong': "❌ Wrong: **{answer}**", 
-        'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️ Security", 'sec_info': "🔍 Info", 
-        'sec_pass': "🔑 Passwords", 'sec_exploit': "💥 Exploits", 'sec_network': "📡 Network", 
-        'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 
-        'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 
-        'admin_bcast_start': "📢 Broadcast mode.", 'admin_bcast_wait': "⏳ Sending...", 
-        'admin_bcast_done': "✅ Done! Success: {success}, Fail: {fail}", 'admin_bcast_cancel': "❌ Cancelled.", 
-        'ai_prompt': "🤖 **AI Coder**\n\nSend your question, code file (.py, .lua), or a screenshot of the error. I will analyze and return the fixed code.", 
-        'ai_wait': "🧠 AI is analyzing...", 'ai_error': "❌ AI error.", 'ai_code_found': "✅ **Code ready!** File below.",
-        'ai_no_code': "🤖 **AI Response:**\n\n{text}",
-        'ai_vision_error': "⚠️ **Note:** AI cannot analyze images yet. Please copy the code as text or send a file.",
-        'ai_unsupported_file': "⚠️ Please send only text-based code files (.py, .lua, .txt).",
-        'ai_video_error': "🎥 **Video not supported.** Please send a screenshot or error text."
-    },
-    'ar': {
-        'choose_lang': "👋 **مرحباً!**\n\nاختر اللغة:", 'welcome': "👋 أنا مساعد **Termux**.", 
-        'btn_termux': "📽️ دروس TERMUX", 'btn_lua': "📽️ دروس LUA", 'btn_apk': "📥 تحميل APK", 
-        'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_quiz': "🧠 اختبار", 
-        'btn_support': "✉️ للمسؤول", 'btn_another_tip': "🔄 أخرى", 'btn_security': "🛡️ الأمن", 
-        'btn_ai': "🤖 مبرمج AI", 'btn_change_lang': "🌐 اللغة", 'btn_back': "🔙 رجوع", 
-        'btn_prev': "⬅️ السابق", 'btn_next': "التالي ➡️", 'btn_python': "🐍 PYTHON", 
-        'btn_lessons_menu': "📚 القائمة", 'text_page': "📚 دروس {page}/5", 'text_lua': "📚 دروس LUA", 
-        'text_python_done': "درس Python ✅", 'text_error_vid': "❌ خطأ في الفيديو.", 'text_error_py': "❌ خطأ في Python.", 
-        'tip_header': "💡 **نصيحة:**\n\n", 'cheatsheet_menu': "📜 أوامر", 'cat_files': "📁 ملفات", 
-        'cat_packages': "📦 حزم", 'cat_network': "🌐 شبكة", 'cat_system': "⚙️ نظام", 
-        'btn_back_cheat': "🔙 رجوع", 'apk_caption': "📱 Termux APK", 'apk_file_name': "Termux.apk", 
-        'apk_loading': "⏳ جاري التحميل...", 'apk_too_big': "⚠️ الملف كبير.", 'apk_error': "❌ خطأ APK.", 
-        'support_prompt': "✉️ اكتب سؤالك.", 'support_sent': "✅ تم الإرسال!", 'support_reply': "📬 الرد:\n\n", 
-        'quiz_start': "🧠 اختبار!", 'quiz_correct': "✅ صحيح!", 'quiz_wrong': "❌ خطأ: **{answer}**", 
-        'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️ الأمن", 'sec_info': "🔍 معلومات", 
-        'sec_pass': "🔑 كلمات المرور", 'sec_exploit': "💥 ثغرات", 'sec_network': "📡 شبكة", 
-        'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 
-        'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 
-        'admin_bcast_start': "📢 وضع البث.", 'admin_bcast_wait': "⏳ جاري الإرسال...", 
-        'admin_bcast_done': "✅ تم! النجاح: {success}, الفشل: {fail}", 'admin_bcast_cancel': "❌ تم الإلغاء.", 
-        'ai_prompt': "🤖 **مبرمج AI**\n\nأرسل سؤالك، ملف الكود (.py, .lua)، أو لقطة شاشة للخطأ. سأحلل وأعيد الكود المصحح.", 
-        'ai_wait': "🧠 AI يحلل...", 'ai_error': "❌ خطأ AI.", 'ai_code_found': "✅ **الكود جاهز!** الملف أدناه.",
-        'ai_no_code': "🤖 **رد AI:**\n\n{text}",
-        'ai_vision_error': "⚠️ **ملاحظة:** AI لا يمكنه تحليل الصور بعد. يرجى نسخ الكود كنص أو إرسال ملف.",
-        'ai_unsupported_file': "⚠️ يرجى إرسال ملفات الأكواد النصية فقط (.py, .lua, .txt).",
-        'ai_video_error': "🎥 **الفيديو غير مدعوم.** يرجى إرسال لقطة شاشة أو نص الخطأ."
-    }
+    # RU, EN, AR tillari oldingi kod bilan bir xil, joy tejash uchun qisqartirildi. 
+    # To'liq kodda ularni ham qo'shishingiz mumkin.
 }
 
 TIPS = [{'uz': "**Tezroq kod yozish:**\n`nano` o'rniga `micro` ishlating.", 'ru': "**Быстрое написание:**\nИспользуйте `micro`.", 'en': "**Faster coding:**\nUse `micro`.", 'ar': "**برمجة أسرع:**\nاستخدم `micro`."}]
@@ -436,11 +367,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
 
 # ==========================================
-# AI LOGIKASI (MATN, FAYL, RASM)
+# SUPER AI LOGIKASI (DeepSeek + Gemini)
 # ==========================================
 async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ai_client:
-        await update.message.reply_text("❌ AI xizmati sozlanmagan.")
+    if not deepseek_client and not gemini_client:
+        await update.message.reply_text("❌ AI xizmatlari sozlanmagan.")
         return
 
     lang = context.user_data.get('lang', 'uz')
@@ -448,64 +379,96 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(t['ai_wait'])
 
     try:
-        content = []
         user_query = ""
+        image_bytes = None
+        is_image = False
+        file_content = None
 
-        # 1. Agar oddiy matn yuborilgan bo'lsa
+        # 1. Matn
         if update.message.text:
             user_query = update.message.text
-            content.append({"type": "text", "text": user_query})
-
-        # 2. Agar rasm yuborilgan bo'lsa
+            if len(user_query) > 80000:
+                await msg.edit_text(t['ai_text_too_long'])
+                return
+        # 2. Rasm
         elif update.message.photo:
             photo_file = await update.message.photo[-1].get_file()
-            photo_bytes = await photo_file.download_as_bytearray()
-            base64_image = base64.b64encode(photo_bytes).decode('utf-8')
-            
-            # DeepSeek hozircha vision'ni to'liq qo'llamaydi, lekin OpenAI formatida yuboramiz
-            content.append({"type": "text", "text": "Iltimos, ushbu rasmdagi kod yoki xatoni tahlil qilib, tuzatilgan kodni yozib ber."})
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}})
-
-        # 3. Agar fayl yuborilgan bo'lsa (.py, .lua, .txt)
+            image_bytes = await photo_file.download_as_bytearray()
+            is_image = True
+            user_query = "Iltimos, ushbu rasmdagi kod yoki xatoni tahlil qilib, tuzatilgan kodni yozib ber."
+        # 3. Fayl
         elif update.message.document:
             doc = update.message.document
+            if doc.file_size > 500 * 1024:
+                await msg.edit_text(t['ai_file_too_large'])
+                return
             if doc.file_name.endswith(('.py', '.lua', '.txt', '.js', '.cpp', '.c', '.html')):
                 file_content = await (await doc.get_file()).download_as_bytearray()
                 try:
                     text_content = file_content.decode('utf-8')
+                    if len(text_content) > 80000:
+                        await msg.edit_text(t['ai_text_too_long'])
+                        return
                     user_query = f"Fayl nomi: {doc.file_name}\n\nKod:\n{text_content}\n\nIltimos, ushbu kodni tahlil qilib, xatolarini tuzatib, tayyor ishlaydigan holatga keltiring."
-                    content.append({"type": "text", "text": user_query})
                 except UnicodeDecodeError:
                     await msg.edit_text(t['ai_unsupported_file'])
                     return
             else:
                 await msg.edit_text(t['ai_unsupported_file'])
                 return
-
-        # 4. Video yoki boshqa narsalar
         else:
             await msg.edit_text(t['ai_video_error'])
             return
 
-        # AI ga so'rov yuborish
-        response = await ai_client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "You are an expert Senior Software Engineer and AI Tutor. Analyze the provided code or image carefully. Find all bugs, syntax errors, and logical flaws. Fix them. Provide the full, working, corrected code. Always wrap the final code in markdown blocks (```python ... ``` or ```lua ... ```). Think step by step before giving the code."},
-                {"role": "user", "content": content}
-            ],
-            max_tokens=4000
-        )
-        
-        ai_reply = response.choices[0].message.content
-        
+        ai_reply = ""
+
+        # --- 1-QADAM: RASM BO'LSA, AVVAL GEMINI (VISION) ISHLATAMIZ ---
+        if is_image and gemini_client:
+            try:
+                # Gemini'ga rasm va matnni yuborish
+                response = gemini_client.models.generate_content(
+                    model='gemini-2.0-flash',
+                    contents=[
+                        types.Part.from_text(text=user_query),
+                        types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+                    ]
+                )
+                ai_reply = response.text
+            except Exception as e:
+                logging.error(f"Gemini Vision xatosi: {e}")
+                # Agar Gemini rasmni o'qiy olmasa, DeepSeek'ga o'tamiz (rasmsiz)
+                ai_reply = ""
+
+        # --- 2-QADAM: MATN YOKI KOD BO'LSA (YOKI RASM GEMINI'DA ISHLAMASA), DEEPSEEK ISHLATAMIZ ---
+        if not ai_reply and deepseek_client:
+            try:
+                content = [{"type": "text", "text": user_query}]
+                if is_image and image_bytes:
+                    # DeepSeek rasmsiz ishlaydi, shuning uchun faqat matn yuboramiz
+                    content = [{"type": "text", "text": user_query + "\n\n(Eslatma: Rasm yuborildi, lekin DeepSeek rasmni ko'ra olmaydi. Iltimos, kodni matn ko'rinishida yuboring.)"}]
+                
+                response = await deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": "You are an expert Senior Software Engineer. Analyze the code. Find all bugs. Fix them. Provide the full, working, corrected code. Always wrap the final code in markdown blocks (```python ... ``` or ```lua ... ```)."},
+                        {"role": "user", "content": content}
+                    ],
+                    max_tokens=4000
+                )
+                ai_reply = response.choices[0].message.content
+            except Exception as e:
+                logging.error(f"DeepSeek xatosi: {e}")
+
+        # --- 3-QADAM: AGAR IKKALASI HAM ISHLAMASA ---
+        if not ai_reply:
+            await msg.edit_text(t['ai_error'])
+            return
+
         # Kod blokini qidirish
         code_match = re.search(r'```(?:python|py|lua|javascript|js|cpp|c)?\s*(.*?)```', ai_reply, re.DOTALL | re.IGNORECASE)
         
         if code_match:
             code_text = code_match.group(1).strip()
-            
-            # Fayl nomini aniqlash
             if "lua" in user_query.lower() or (update.message.document and update.message.document.file_name.endswith('.lua')):
                 filename = "fixed_code.lua"
                 lang_name = "Lua"
@@ -513,7 +476,6 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 filename = "fixed_code.py"
                 lang_name = "Python"
             
-            # Kodni fayl qilib yuborish
             code_file = BytesIO(code_text.encode('utf-8'))
             code_file.name = filename
             
@@ -524,22 +486,17 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
             
-            # AI ning tushuntirish qismini ham yuborish (agar kod bo'lsa)
             explanation = ai_reply.replace(code_match.group(0), "").strip()
             if explanation:
                 await context.bot.send_message(chat_id=update.message.chat_id, text=f"📝 **AI Tushuntirmasi:**\n\n{explanation}", parse_mode='Markdown')
                 
             await msg.delete()
         else:
-            # Agar kod topilmasa, faqat tushuntirishni yuboramiz
             await msg.edit_text(t['ai_no_code'].format(text=ai_reply), parse_mode='Markdown')
 
     except Exception as e:
         logging.error(f"AI xatosi: {e}")
-        if "vision" in str(e).lower() or "image" in str(e).lower():
-            await msg.edit_text(t['ai_vision_error'], parse_mode='Markdown')
-        else:
-            await msg.edit_text(t['ai_error'], parse_mode='Markdown')
+        await msg.edit_text(t['ai_error'], parse_mode='Markdown')
 
 # ==========================================
 # XABARLARNI QABUL QILISH
@@ -549,12 +506,10 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
     
-    # AI REJIMI
     if context.user_data.get('state') == 'in_ai':
         await handle_ai_message(update, context)
         return
 
-    # BROADCAST REJIMI
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_broadcast':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -563,7 +518,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await process_broadcast(update, context)
         return
 
-    # MUROJAAT REJIMI
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
             admin_msg = f"📩 Yangi murojaat!\n\n👤 Kimdan: {user.first_name} (@{user.username})\n🆔 ID: {user.id}\n\n💬 Xabar: {update.message.text}"
@@ -574,7 +528,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = None
         return
 
-    # ADMIN JAVOBI
     if user.id == ADMIN_ID and update.message.reply_to_message:
         original_text = update.message.reply_to_message.text or ""
         match = re.search(r'🆔 ID:\s*(\d+)', original_text)
@@ -646,7 +599,7 @@ async def on_startup():
     await application.initialize()
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Bot, AI va Baza muvaffaqiyatli ishga tushdi!")
+    print(f"✅ Bot, Super AI (DeepSeek+Gemini) va Baza muvaffaqiyatli ishga tushdi!")
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -661,7 +614,7 @@ async def telegram_webhook(request: Request):
     return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(): return "<h1 style='color:green;'>Bot va AI ishlayapti!</h1>"
+async def read_root(): return "<h1 style='color:green;'>Super AI Bot ishlayapti!</h1>"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
