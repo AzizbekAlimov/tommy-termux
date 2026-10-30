@@ -9,8 +9,8 @@ import datetime
 from io import BytesIO
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, PreCheckoutQueryHandler
 from telegram.error import TelegramError
 from openai import AsyncOpenAI
 from google import genai
@@ -45,7 +45,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 db_pool = None
 
 # ==========================================
-# MA'LUMOTLAR BAZASI
+# MA'LUMOTLAR BAZASI (PULLIK VA FAYLLAR BILAN)
 # ==========================================
 async def init_db():
     global db_pool
@@ -53,17 +53,36 @@ async def init_db():
     try:
         db_pool = await asyncpg.create_pool(DATABASE_URL)
         async with db_pool.acquire() as conn:
+            # Foydalanuvchilar jadvali (Premium va AI limit qo'shildi)
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
                     lang VARCHAR(5) DEFAULT 'uz',
                     score INT DEFAULT 0,
+                    is_premium BOOLEAN DEFAULT FALSE,
+                    ai_requests_today INT DEFAULT 0,
+                    last_ai_date DATE DEFAULT CURRENT_DATE,
                     last_bonus TIMESTAMP DEFAULT '1970-01-01 00:00:00',
                     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS score INT DEFAULT 0;")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_bonus TIMESTAMP DEFAULT '1970-01-01 00:00:00';")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT FALSE;")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_requests_today INT DEFAULT 0;")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ai_date DATE DEFAULT CURRENT_DATE;")
+            
+            # Fayllar Markazi jadvali
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS files (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(255),
+                    file_id VARCHAR(255),
+                    file_type VARCHAR(20),
+                    is_premium BOOLEAN DEFAULT FALSE,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
     except Exception as e:
         logging.error(f"Baza xatosi: {e}")
 
@@ -88,15 +107,10 @@ async def add_score_all(points):
 async def get_user_profile(user_id):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT score, last_bonus FROM users WHERE user_id = $1', user_id)
+        user = await conn.fetchrow('SELECT score, last_bonus, is_premium FROM users WHERE user_id = $1', user_id)
         if not user: return None
         rank = await conn.fetchval('SELECT COUNT(*) FROM users WHERE score > $1', user['score'])
-        return {"score": user['score'], "rank": rank + 1, "last_bonus": user['last_bonus']}
-
-async def get_top_users():
-    if not db_pool: return []
-    async with db_pool.acquire() as conn:
-        return await conn.fetch('SELECT user_id, score FROM users ORDER BY score DESC LIMIT 10')
+        return {"score": user['score'], "rank": rank + 1, "last_bonus": user['last_bonus'], "is_premium": user['is_premium']}
 
 async def claim_daily_bonus(user_id):
     if not db_pool: return False
@@ -108,6 +122,42 @@ async def claim_daily_bonus(user_id):
                 await conn.execute('UPDATE users SET score = score + 20, last_bonus = $1 WHERE user_id = $2', now, user_id)
                 return True
         return False
+
+# Yangi funksiyalar (Fayllar va Premium)
+async def check_ai_limit(user_id):
+    if user_id == ADMIN_ID: return True, 999
+    if not db_pool: return True, 999
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow('SELECT is_premium, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
+        today = datetime.date.today()
+        
+        if user['is_premium']: return True, 999
+        
+        # Agar kun o'zgargan bo'lsa, limitni tozalash
+        if user['last_ai_date'] < today:
+            await conn.execute('UPDATE users SET ai_requests_today = 1, last_ai_date = $1 WHERE user_id = $2', today, user_id)
+            return True, 4
+        else:
+            if user['ai_requests_today'] < 5:
+                await conn.execute('UPDATE users SET ai_requests_today = ai_requests_today + 1 WHERE user_id = $1', user_id)
+                return True, 5 - user['ai_requests_today']
+            else:
+                return False, 0
+
+async def make_premium(user_id):
+    if not db_pool: return
+    async with db_pool.acquire() as conn:
+        await conn.execute('UPDATE users SET is_premium = TRUE WHERE user_id = $1', user_id)
+
+async def get_all_files():
+    if not db_pool: return []
+    async with db_pool.acquire() as conn:
+        return await conn.fetch('SELECT id, title, is_premium FROM files ORDER BY id DESC')
+
+async def add_file_db(title, file_id, file_type, is_premium=False):
+    if not db_pool: return
+    async with db_pool.acquire() as conn:
+        await conn.execute('INSERT INTO files (title, file_id, file_type, is_premium) VALUES ($1, $2, $3, $4)', title, file_id, file_type, is_premium)
 
 def get_level(score):
     if score < 100: return "🥉 Boshlovchi"
@@ -128,55 +178,10 @@ async def is_subscribed(user_id, context):
 # SUPER SKRIPTLAR BAZASI
 # ==========================================
 SCRIPTS_DATA = {
-    "dev": {
-        "name": "💻 Dasturlash",
-        "items": {
-            "python": {"name": "🐍 Python", "pkg": "python", "type": "pkg"},
-            "git": {"name": "🐙 Git", "pkg": "git", "type": "pkg"},
-            "node": {"name": "🟢 Node.js", "pkg": "nodejs", "type": "pkg"},
-            "curl": {"name": "📡 Curl", "pkg": "curl", "type": "pkg"},
-            "wget": {"name": "📥 Wget", "pkg": "wget", "type": "pkg"},
-            "nano": {"name": "📝 Nano", "pkg": "nano", "type": "pkg"},
-            "vim": {"name": "📝 Vim", "pkg": "vim", "type": "pkg"},
-            "micro": {"name": "📝 Micro", "pkg": "micro", "type": "pkg"},
-        }
-    },
-    "hacking": {
-        "name": "🛡️ Kiberxavfsizlik",
-        "items": {
-            "nmap": {"name": "🌐 Nmap", "pkg": "nmap", "type": "pkg"},
-            "hydra": {"name": "🔑 Hydra", "pkg": "hydra", "type": "pkg"},
-            "sqlmap": {"name": "💥 SQLmap", "pkg": "sqlmap", "type": "pip"},
-            "metasploit": {"name": "💀 Metasploit", "pkg": "metasploit", "type": "pkg"},
-            "john": {"name": "🔓 John The Ripper", "pkg": "john", "type": "pkg"},
-            "nikto": {"name": "🕵️ Nikto", "pkg": "nikto", "type": "pkg"},
-            "aircrack": {"name": "📡 Aircrack-ng", "pkg": "aircrack-ng", "type": "pkg"},
-            "tshark": {"name": "🦈 Tshark", "pkg": "tshark", "type": "pkg"},
-        }
-    },
-    "media": {
-        "name": "🎬 Media va Tarmoq",
-        "items": {
-            "ffmpeg": {"name": "🎞️ FFmpeg", "pkg": "ffmpeg", "type": "pkg"},
-            "ytdlp": {"name": "📥 yt-dlp (Video yuklovchi)", "pkg": "yt-dlp", "type": "pip"},
-            "imagemagick": {"name": "🖼️ ImageMagick", "pkg": "imagemagick", "type": "pkg"},
-            "openssh": {"name": "🔐 OpenSSH", "pkg": "openssh", "type": "pkg"},
-            "net-tools": {"name": "🌐 Net-tools", "pkg": "net-tools", "type": "pkg"},
-            "traceroute": {"name": "🛣️ Traceroute", "pkg": "traceroute", "type": "pkg"},
-            "dnsutils": {"name": "🔍 DNS Utils", "pkg": "dnsutils", "type": "pkg"},
-        }
-    },
-    "style": {
-        "name": "🎨 Termuxni Chiroyli Qilish",
-        "items": {
-            "zsh": {"name": "🐚 Zsh", "pkg": "zsh", "type": "pkg"},
-            "ohmyzsh": {"name": "✨ Oh-My-Zsh", "pkg": "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash", "type": "custom"},
-            "termuxstyle": {"name": "🎨 Termux Styling", "pkg": "termux-styling", "type": "pkg"},
-            "figlet": {"name": "🔠 Figlet (Yozuvlar)", "pkg": "figlet", "type": "pkg"},
-            "lolcat": {"name": "🌈 Lolcat", "pkg": "lolcat", "type": "pkg"},
-            "neofetch": {"name": "💻 Neofetch", "pkg": "neofetch", "type": "pkg"},
-        }
-    }
+    "dev": {"name": "💻 Dasturlash", "items": {"python": {"name": "🐍 Python", "pkg": "python", "type": "pkg"}, "git": {"name": "🐙 Git", "pkg": "git", "type": "pkg"}, "node": {"name": "🟢 Node.js", "pkg": "nodejs", "type": "pkg"}, "curl": {"name": "📡 Curl", "pkg": "curl", "type": "pkg"}, "wget": {"name": "📥 Wget", "pkg": "wget", "type": "pkg"}, "nano": {"name": "📝 Nano", "pkg": "nano", "type": "pkg"}, "vim": {"name": "📝 Vim", "pkg": "vim", "type": "pkg"}, "micro": {"name": "📝 Micro", "pkg": "micro", "type": "pkg"}}},
+    "hacking": {"name": "🛡️ Kiberxavfsizlik", "items": {"nmap": {"name": "🌐 Nmap", "pkg": "nmap", "type": "pkg"}, "hydra": {"name": "🔑 Hydra", "pkg": "hydra", "type": "pkg"}, "sqlmap": {"name": "💥 SQLmap", "pkg": "sqlmap", "type": "pip"}, "metasploit": {"name": "💀 Metasploit", "pkg": "metasploit", "type": "pkg"}, "john": {"name": "🔓 John The Ripper", "pkg": "john", "type": "pkg"}, "nikto": {"name": "🕵️ Nikto", "pkg": "nikto", "type": "pkg"}, "aircrack": {"name": "📡 Aircrack-ng", "pkg": "aircrack-ng", "type": "pkg"}, "tshark": {"name": "🦈 Tshark", "pkg": "tshark", "type": "pkg"}}},
+    "media": {"name": "🎬 Media va Tarmoq", "items": {"ffmpeg": {"name": "🎞️ FFmpeg", "pkg": "ffmpeg", "type": "pkg"}, "ytdlp": {"name": "📥 yt-dlp", "pkg": "yt-dlp", "type": "pip"}, "imagemagick": {"name": "🖼️ ImageMagick", "pkg": "imagemagick", "type": "pkg"}, "openssh": {"name": "🔐 OpenSSH", "pkg": "openssh", "type": "pkg"}, "net-tools": {"name": "🌐 Net-tools", "pkg": "net-tools", "type": "pkg"}, "traceroute": {"name": "🛣️ Traceroute", "pkg": "traceroute", "type": "pkg"}, "dnsutils": {"name": "🔍 DNS Utils", "pkg": "dnsutils", "type": "pkg"}}},
+    "style": {"name": "🎨 Termuxni Chiroyli Qilish", "items": {"zsh": {"name": "🐚 Zsh", "pkg": "zsh", "type": "pkg"}, "ohmyzsh": {"name": "✨ Oh-My-Zsh", "pkg": "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash", "type": "custom"}, "termuxstyle": {"name": "🎨 Termux Styling", "pkg": "termux-styling", "type": "pkg"}, "figlet": {"name": "🔠 Figlet", "pkg": "figlet", "type": "pkg"}, "lolcat": {"name": "🌈 Lolcat", "pkg": "lolcat", "type": "pkg"}, "neofetch": {"name": "💻 Neofetch", "pkg": "neofetch", "type": "pkg"}}}
 }
 
 # ==========================================
@@ -196,55 +201,71 @@ TEXTS = {
         'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat",
         'btn_cheatsheet': "📜 Buyruqlar", 'btn_change_lang': "🌐 Til",
-        'btn_scripts': "📦 Skript Yaratish",
+        'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar Markazi", 'btn_premium': "💎 Premium Obuna",
         'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
         'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
         
         'force_sub_text': f"⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
         
-        # Skript Yaratish (PRO)
-        'script_cat_menu': "📦 **Termux Skript Yaratuvchi (PRO)**\n\nKerakli bo'limni tanlang. U yerdan dasturlarni belgilab, bitta mukammal skript yasab olasiz:",
+        'script_cat_menu': "📦 **Termux Skript Yaratuvchi (PRO)**\n\nKerakli bo'limni tanlang:",
         'script_items_menu': "⚙️ **{cat_name}**\n\nKerakli dasturlarni tanlang (✅ - tanlandi):",
-        'btn_generate_script': "🚀 Skriptni yaratish",
-        'btn_clear_scripts': "🗑 Tozalash",
-        'btn_back_to_cats': "🔙 Bo'limlarga qaytish",
+        'btn_generate_script': "🚀 Skriptni yaratish", 'btn_clear_scripts': "🗑 Tozalash", 'btn_back_to_cats': "🔙 Bo'limlarga qaytish",
         'script_empty': "⚠️ Iltimos, avval kamida bitta dasturni tanlang!",
-        'script_done': "✅ **Sizning mukammal skriptingiz tayyor!**\n\nUni yuklab oling va Termux'da quyidagi buyruq bilan ishga tushiring:\n\n`bash install.sh`\n\n_Skript o'zi `pkg update` qiladi, xatolarni tekshiradi va dasturlarni o'rnatadi._",
+        'script_done': "✅ **Skriptingiz tayyor!**\n\nUni Termux'da `bash install.sh` bilan ishga tushiring.",
+
+        # Fayllar Markazi
+        'files_menu': "🗂 **Fayllar Markazi**\n\nKerakli faylni tanlang va yuklab oling:",
+        'files_empty': "Hozircha fayllar yo'q. Tez orada qo'shiladi!",
+        'file_sending': "⏳ Fayl yuborilmoqda...",
+        'file_premium_locked': "🔒 Bu fayl faqat Premium obunachilar uchun!",
+
+        # Premium Obuna
+        'premium_menu': "💎 **Premium Obuna**\n\nPremium obuna orqali quyidagi imkoniyatlarga ega bo'lasiz:\n\n✅ **AI Dasturchidan cheksiz foydalanish** (Bepul foydalanuvchilar uchun kuniga 5 ta limit bor)\n✅ **Maxsus Premium fayllarni yuklab olish**\n✅ **Tezroq va ustuvor javob olish**\n\n💰 **Narxi:** Hozircha BEPUL!",
+        'btn_buy_premium': "⭐️ Premium olish (Bepul)",
+        'premium_success': "🎉 **Tabriklaymiz!** Siz Premium obunachi bo'ldingiz. Endi barcha imkoniyatlar ochiq!",
+        'ai_limit_reached': "⚠️ **Limit tugadi!**\n\nBepul foydalanuvchilar uchun AI limiti kuniga 5 ta. Cheksiz foydalanish uchun Premium obuna sotib oling.",
+        'btn_go_premium': "💎 Premium olish",
 
         # Admin Panel
         'admin_panel': "👑 **Admin Boshqaruv Paneli**\n\nKerakli bo'limni tanlang:",
         'admin_btn_stats': "📊 Statistika", 'admin_btn_bcast': "📢 Xabar yuborish",
-        'admin_btn_points': "🎁 Hammaga ball berish", 'admin_btn_close': "❌ Yopish",
+        'admin_btn_points': "🎁 Hammaga ball berish", 'admin_btn_add_file': "➕ Fayl qo'shish",
+        'admin_btn_close': "❌ Yopish",
         'admin_points_prompt': "🎁 **Aksiya!**\n\nBarcha foydalanuvchilarga qancha ball qo'shmoqchisiz? (Faqat raqam yozing)",
         'admin_points_done': "✅ Barcha foydalanuvchilarga {points} ball qo'shildi!",
+        'admin_file_wait': "📂 **Faylni yuboring** (Hujjat, Video, Rasm, APK va h.k.):",
+        'admin_file_title': "✍️ Endi ushbu fayl uchun **nomi va tavsifini** yozing:",
+        'admin_file_saved': "✅ Fayl muvaffaqiyatli saqlandi!",
+        'admin_file_cancel': "❌ Bekor qilindi.",
 
-        'text_page': "📚 **Darsliklar**\n\nSahifa: {page} / 5",
-        'text_lua': "📚 **LUA DARSLIKLARI**",
+        'text_page': "📚 **Darsliklar**\n\nSahifa: {page} / 5", 'text_lua': "📚 **LUA DARSLIKLARI**",
         'text_python_done': "Mana Python darsligi! ✅", 'text_error_vid': "❌ Xatolik!",
         'tip_header': "💡 **Maslahat:**\n\n", 'cheatsheet_menu': "📜 **Buyruqlar**\n\nBo'limni tanlang:",
         'cat_files': "📁 Fayllar", 'cat_packages': "📦 Paketlar", 'cat_network': "🌐 Tarmoq", 'cat_system': "⚙️ Tizim",
         'apk_caption': "📱 **Termux APK**", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌ Xatolik!",
         'support_prompt': "✉️ **Admin**\n\nXabaringizni yozib qoldiring:", 'support_sent': "✅ Yuborildi!", 'support_reply': "📬 **Admin:**\n\n",
         
-        'profile_text': "👤 **Profil**\n\n⭐ **Ball:** {score}\n🏅 **Daraja:** {level}\n📊 **O'rin:** #{rank}",
+        'profile_text': "👤 **Profil**\n\n⭐ **Ball:** {score}\n🏅 **Daraja:** {level}\n📊 **O'rin:** #{rank}\n💎 **Holat:** {status}",
         'btn_daily_bonus': "🎁 Kunlik bonus (+20)", 'bonus_claimed': "✅ **+20 ball!**", 'bonus_wait': "⏳ Ertaga qayta keling!",
         'top_text': "🏆 **Top 10:**\n\n{list}",
         'quiz_start': "🧠 **Test!** To'g'ri javob: **+10 ball**.",
         'quiz_correct': "✅ **To'g'ri!** 🎉 (+10 ball)", 'quiz_wrong': "❌ **Xato!** Javob: **{answer}**",
         
-        'sec_menu': "🛡️ **Kiberxavfsizlik**", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡",
+        'sec_menu': "🛡️ **Kiberxavfsizlik Asboblari**\n\n⚠️ Faqat o'z tizimlaringizni tekshirish uchun!",
+        'sec_info': "🔍 Ma'lumot yig'ish", 'sec_pass': "🔑 Parol hujumlari", 'sec_exploit': "💥 Zaifliklar", 'sec_network': "📡 Tarmoq tahlili",
         'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`",
+        
         'admin_bcast_start': "📢 Xabar yuboring:", 'admin_bcast_wait': "⏳...", 'admin_bcast_done': "✅ Yuborildi: {success}, Xato: {fail}", 'admin_bcast_cancel': "❌ Bekor",
         'ai_prompt': "🤖 **AI Dasturchi**\n\nDasturlash bo'yicha topshiriq bering yoki kod faylini tashlang.",
         'ai_wait': "🧠 AI ishlamoqda...", 'ai_error': "❌ Xatolik: {error}", 'ai_code_found': "✅ **Kod!**", 'ai_no_code': "🤖 **AI:**\n\n{text}",
         'ai_vision_error': "⚠️ Rasm xato.", 'ai_unsupported_file': "⚠️ Faqat kod fayllari.", 'ai_video_error': "🎥 Video yo'q.",
-        'ai_file_too_large': "⚠️ Katta fayl.", 'ai_text_too_long': "⚠️ Uzun kod.", 'ai_not_coding': "🤖 Faqat dasturlash."
+        'ai_file_too_large': "⚠️ Katta fayl.", 'ai_text_too_long': "⚠️ Uzun kod.", 'ai_not_coding': "🤖 Faqat dasturlash.",
+        'ai_limit_info': "ℹ️ *Bugun uchun qolgan limitingiz: {limit} ta*"
     },
-    # Qolgan tillar (ru, en, ar) avvalgidek qoladi, xatolik bermasligi uchun asosiy kalitlar
-    'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'script_cat_menu': "📦 **Генератор скриптов**\n\nВыберите категорию:", 'script_items_menu': "⚙️ **{cat_name}**\n\nВыберите программы:", 'btn_generate_script': "🚀 Создать скрипт", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово! Запустите: `bash install.sh`", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊 Статистика", 'admin_btn_bcast': "📢 Рассылка", 'admin_btn_points': "🎁 Дать всем баллы", 'admin_btn_close': "❌ Закрыть", 'admin_points_prompt': "🎁 Сколько баллов добавить?", 'admin_points_done': "✅ Добавлено {points} баллов!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **Совет:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n\n⭐ Очки: {score}\n🏅 Уровень: {level}\n📊 Место: #{rank}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20 очков!", 'bonus_wait': "⏳ Приходите завтра!", 'top_text': "🏆 **Топ 10:**\n\n{list}", 'quiz_start': "🧠 Тест (+10 очков)", 'quiz_correct': "✅ +10 очков!", 'quiz_wrong': "❌ Ответ: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"},
-    'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'script_cat_menu': "📦 **Script Generator**\n\nSelect category:", 'script_items_menu': "⚙️ **{cat_name}**\n\nSelect programs:", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done! Run: `bash install.sh`", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊 Stats", 'admin_btn_bcast': "📢 Broadcast", 'admin_btn_points': "🎁 Give points to all", 'admin_btn_close': "❌ Close", 'admin_points_prompt': "🎁 How many points to add?", 'admin_points_done': "✅ Added {points} points!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **Tip:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n\n⭐ Score: {score}\n🏅 Level: {level}\n📊 Rank: #{rank}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20 points!", 'bonus_wait': "⏳ Come back tomorrow!", 'top_text': "🏆 **Top 10:**\n\n{list}", 'quiz_start': "🧠 Quiz (+10 pts)", 'quiz_correct': "✅ +10 points!", 'quiz_wrong': "❌ Answer: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"},
-    'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'script_cat_menu': "📦 **مولد السكريبت**\n\nاختر الفئة:", 'script_items_menu': "⚙️ **{cat_name}**\n\nاختر البرامج:", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز! شغله بـ: `bash install.sh`", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊 إحصائيات", 'admin_btn_bcast': "📢 بث", 'admin_btn_points': "🎁 نقاط للجميع", 'admin_btn_close': "❌ إغلاق", 'admin_points_prompt': "🎁 كم نقطة تضيف للجميع؟", 'admin_points_done': "✅ أضيفت {points} نقطة!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **نصيحة:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n\n⭐ النقاط: {score}\n🏅 المستوى: {level}\n📊 الترتيب: #{rank}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20 نقطة!", 'bonus_wait': "⏳ عد غداً!", 'top_text': "🏆 **أفضل 10:**\n\n{list}", 'quiz_start': "🧠 اختبار (+10)", 'quiz_correct': "✅ +10 نقاط!", 'quiz_wrong': "❌ الجواب: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"}
+    'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_files': "🗂 Файлы", 'btn_premium': "💎 Премиум", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'script_cat_menu': "📦 **Генератор**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Создать", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'files_menu': "🗂 **Файлы**", 'files_empty': "Нет файлов.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Только для Премиум!", 'premium_menu': "💎 **Премиум**", 'btn_buy_premium': "⭐️ Получить Премиум (Бесплатно)", 'premium_success': "🎉 Вы Премиум!", 'ai_limit_reached': "⚠️ Лимит (5/день). Купите Премиум.", 'btn_go_premium': "💎 Купить", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Файл", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Баллы:", 'admin_points_done': "✅ {points} добавлено!", 'admin_file_wait': "📂 Отправьте файл:", 'admin_file_title': "✍️ Название:", 'admin_file_saved': "✅ Сохранено!", 'admin_file_cancel': "❌ Отменено.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Завтра!", 'top_text': "🏆 **Топ 10:**\n{list}", 'quiz_start': "🧠 Тест", 'quiz_correct': "✅ +10!", 'quiz_wrong': "❌ {answer}", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Лимит: {limit}"},
+    'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_files': "🗂 File Center", 'btn_premium': "💎 Premium", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'script_cat_menu': "📦 **Script Generator**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'files_menu': "🗂 **File Center**", 'files_empty': "No files yet.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Premium only!", 'premium_menu': "💎 **Premium**", 'btn_buy_premium': "⭐️ Get Premium (Free)", 'premium_success': "🎉 You are Premium!", 'ai_limit_reached': "⚠️ Limit reached (5/day). Buy Premium.", 'btn_go_premium': "💎 Go Premium", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Add File", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Points to add:", 'admin_points_done': "✅ Added {points}!", 'admin_file_wait': "📂 Send file:", 'admin_file_title': "✍️ File title:", 'admin_file_saved': "✅ Saved!", 'admin_file_cancel': "❌ Cancelled.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Tomorrow!", 'top_text': "🏆 **Top 10:**\n{list}", 'quiz_start': "🧠 Quiz", 'quiz_correct': "✅ +10!", 'quiz_wrong': "❌ {answer}", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Remaining: {limit}"},
+    'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_files': "🗂 الملفات", 'btn_premium': "💎 بريميوم", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'script_cat_menu': "📦 **مولد**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'files_menu': "🗂 **الملفات**", 'files_empty': "لا توجد ملفات.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 بريميوم فقط!", 'premium_menu': "💎 **بريميوم**", 'btn_buy_premium': "⭐️ احصل عليه (مجاناً)", 'premium_success': "🎉 أنت بريميوم!", 'ai_limit_reached': "⚠️ الحد (5/يوم). اشتري بريميوم.", 'btn_go_premium': "💎 اشتري", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ ملف", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 نقاط:", 'admin_points_done': "✅ أضيفت {points}!", 'admin_file_wait': "📂 أرسل ملفاً:", 'admin_file_title': "✍️ اسم الملف:", 'admin_file_saved': "✅ تم الحفظ!", 'admin_file_cancel': "❌ ملغي.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ غداً!", 'top_text': "🏆 **أفضل 10:**\n{list}", 'quiz_start': "🧠 اختبار", 'quiz_correct': "✅ +10!", 'quiz_wrong': "❌ {answer}", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ المتبقي: {limit}"}
 }
 
 TIPS = [{'uz': "**Tezroq kod yozish:**\n`nano` o'rniga `micro` ishlating.", 'ru': "**Быстрое написание:**\nИспользуйте `micro`.", 'en': "**Faster coding:**\nUse `micro`.", 'ar': "**برمجة أسرع:**\nاستخدم `micro`."}]
@@ -268,11 +289,19 @@ def get_main_menu(lang):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
         [InlineKeyboardButton(t['btn_ai'], callback_data="ai_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
+        [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")], # Yangi tugmalar
         [InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start"), InlineKeyboardButton(t['btn_top'], callback_data="top_users")],
         [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
         [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet"), InlineKeyboardButton(t['btn_security'], callback_data="sec_start")],
         [InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip"), InlineKeyboardButton(t['btn_support'], callback_data="support_start")],
         [InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
+    ])
+
+def get_premium_keyboard(lang):
+    t = TEXTS[lang]
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t['btn_buy_premium'], callback_data="buy_premium")],
+        [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
     ])
 
 def get_script_categories_keyboard(lang):
@@ -298,7 +327,6 @@ def get_script_items_keyboard(cat_key, lang, selected_scripts):
         if len(row) == 2:
             keyboard.append(row); row = []
     if row: keyboard.append(row)
-    
     keyboard.append([InlineKeyboardButton(t['btn_generate_script'], callback_data="script_generate"), InlineKeyboardButton(t['btn_clear_scripts'], callback_data="script_clear")])
     keyboard.append([InlineKeyboardButton(t['btn_back_to_cats'], callback_data="script_menu")])
     return InlineKeyboardMarkup(keyboard)
@@ -309,6 +337,7 @@ def get_admin_keyboard(lang):
         [InlineKeyboardButton(t['admin_btn_stats'], callback_data="admin_stats")],
         [InlineKeyboardButton(t['admin_btn_bcast'], callback_data="admin_bcast")],
         [InlineKeyboardButton(t['admin_btn_points'], callback_data="admin_points")],
+        [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_add_file")], # Yangi
         [InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_close")]
     ])
 
@@ -328,7 +357,13 @@ def get_profile_keyboard(lang):
 
 def get_sec_menu(lang):
     t = TEXTS[lang]
-    return InlineKeyboardMarkup([[InlineKeyboardButton(t['sec_info'], callback_data="sec_cat_info")], [InlineKeyboardButton(t['sec_pass'], callback_data="sec_cat_pass")], [InlineKeyboardButton(t['sec_exploit'], callback_data="sec_cat_exploit")], [InlineKeyboardButton(t['sec_network'], callback_data="sec_cat_network")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t['sec_info'], callback_data="sec_cat_info")], 
+        [InlineKeyboardButton(t['sec_pass'], callback_data="sec_cat_pass")], 
+        [InlineKeyboardButton(t['sec_exploit'], callback_data="sec_cat_exploit")], 
+        [InlineKeyboardButton(t['sec_network'], callback_data="sec_cat_network")], 
+        [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
+    ])
 
 def get_lessons_keyboard(page, lang):
     t = TEXTS[lang]
@@ -379,6 +414,7 @@ def get_quiz_keyboard(options, correct_answer, lang):
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    context.user_data.clear()
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
     
@@ -387,10 +423,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await add_user(user_id, lang)
-    if 'lang' in context.user_data:
-        await update.message.reply_text(t['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
-    else:
-        await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+    await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
 
 async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -405,10 +438,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("✅ A'zolik tasdiqlandi.")
             await query.message.delete()
             await add_user(user_id, lang)
-            if 'lang' in context.user_data:
-                await context.bot.send_message(chat_id=chat_id, text=t['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
-            else:
-                await context.bot.send_message(chat_id=chat_id, text=TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+            await context.bot.send_message(chat_id=chat_id, text=TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
         else:
             await query.answer(t['force_sub_error'], show_alert=True)
         return
@@ -419,108 +449,101 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
-    # --- SUPER SKRIPT YARATUVCHI ---
-    if data == "script_menu":
+    # --- FAYLLAR MARKAZI ---
+    if data == "files_menu":
+        files = await get_all_files()
+        if not files:
+            return await query.answer(t['files_empty'], show_alert=True)
+        
+        keyboard = []
+        for f in files:
+            lock = "🔒 " if f['is_premium'] else "📄 "
+            keyboard.append([InlineKeyboardButton(f"{lock}{f['title']}", callback_data=f"get_file_{f['id']}")])
+        keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+        
+        await query.edit_message_text(t['files_menu'], reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    elif data.startswith("get_file_"):
+        file_id = int(data.replace("get_file_", ""))
+        if not db_pool: return
+        async with db_pool.acquire() as conn:
+            file_data = await conn.fetchrow('SELECT * FROM files WHERE id = $1', file_id)
+            user = await conn.fetchrow('SELECT is_premium FROM users WHERE user_id = $1', user_id)
+        
+        if file_data['is_premium'] and not user['is_premium'] and user_id != ADMIN_ID:
+            return await query.answer(t['file_premium_locked'], show_alert=True)
+            
+        await query.answer(t['file_sending'])
+        try:
+            if file_data['file_type'] == 'document':
+                await context.bot.send_document(chat_id=chat_id, document=file_data['file_id'], caption=f"📂 {file_data['title']}")
+            elif file_data['file_type'] == 'video':
+                await context.bot.send_video(chat_id=chat_id, video=file_data['file_id'], caption=f"🎬 {file_data['title']}")
+            elif file_data['file_type'] == 'photo':
+                await context.bot.send_photo(chat_id=chat_id, photo=file_data['file_id'], caption=f"🖼 {file_data['title']}")
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"❌ Xatolik: Faylni yuborib bo'lmadi.")
+
+    # --- PREMIUM OBUNA ---
+    elif data == "premium_menu":
+        await query.edit_message_text(t['premium_menu'], reply_markup=get_premium_keyboard(lang), parse_mode='Markdown')
+
+    elif data == "buy_premium":
+        # TEST REJIMI: To'lovsiz Premium berish
+        await make_premium(user_id)
+        await query.edit_message_text(t['premium_success'], parse_mode='Markdown', reply_markup=get_main_menu(lang))
+
+    # --- SKRIPT YARATISH ---
+    elif data == "script_menu":
         await query.edit_message_text(t['script_cat_menu'], reply_markup=get_script_categories_keyboard(lang), parse_mode='Markdown')
-    
     elif data.startswith("script_cat_"):
         cat_key = data.replace("script_cat_", "")
         if 'selected_scripts' not in context.user_data: context.user_data['selected_scripts'] = []
         cat_name = SCRIPTS_DATA[cat_key]['name']
         text = t['script_items_menu'].format(cat_name=cat_name)
         await query.edit_message_text(text, reply_markup=get_script_items_keyboard(cat_key, lang, context.user_data['selected_scripts']), parse_mode='Markdown')
-
     elif data.startswith("script_toggle_"):
         parts = data.replace("script_toggle_", "").split("_", 1)
         cat_key, item_key = parts[0], parts[1]
         script_id = f"{cat_key}_{item_key}"
         selected = context.user_data.get('selected_scripts', [])
-        
         if script_id in selected: selected.remove(script_id)
         else: selected.append(script_id)
         context.user_data['selected_scripts'] = selected
-        
         cat_name = SCRIPTS_DATA[cat_key]['name']
         text = t['script_items_menu'].format(cat_name=cat_name)
         await query.edit_message_reply_markup(reply_markup=get_script_items_keyboard(cat_key, lang, selected))
-
     elif data == "script_clear":
         context.user_data['selected_scripts'] = []
         await query.answer("🗑 Barcha tanlovlar tozalandi!")
-        # Ekranni yangilash uchun hozirgi kategoriyani qayta chaqiramiz (oxirgi bosilganini topish qiyin, shunchaki menyuga qaytaramiz)
         await query.edit_message_text(t['script_cat_menu'], reply_markup=get_script_categories_keyboard(lang), parse_mode='Markdown')
-
     elif data == "script_generate":
         selected = context.user_data.get('selected_scripts', [])
-        if not selected:
-            await query.answer(t['script_empty'], show_alert=True)
-            return
-            
-        # IDEAL SKRIPT YASASH
-        script_content = """#!/data/data/com.termux/files/usr/bin/bash
-
-# Ranglar
-GREEN='\\033[0;32m'
-CYAN='\\033[0;36m'
-RED='\\033[0;31m'
-YELLOW='\\033[1;33m'
-NC='\\033[0m' # No Color
-
-clear
-echo -e "${CYAN}========================================${NC}"
-echo -e "${GREEN}🚀 TERMUX SUPER AVTOMATIK O'RNATUVCHI 🚀${NC}"
-echo -e "${CYAN}========================================${NC}"
-echo -e "${YELLOW}Yaratuvchi: @Tommy_1727${NC}"
-echo -e ""
-
-echo -e "${GREEN}[1/3] Tizim yangilanmoqda... (Bu biroz vaqt olishi mumkin)${NC}"
-pkg update -y && pkg upgrade -y || { echo -e "${RED}❌ Yangilashda xatolik!${NC}"; exit 1; }
-
-echo -e "${GREEN}[2/3] Kerakli paketlar o'rnatilmoqda...${NC}"
-"""
-        pkg_installs = []
-        pip_installs = []
-        custom_commands = []
-
+        if not selected: return await query.answer(t['script_empty'], show_alert=True)
+        
+        script_content = "#!/data/data/com.termux/files/usr/bin/bash\n\n# Ranglar\nGREEN='\\033[0;32m'\nCYAN='\\033[0;36m'\nRED='\\033[0;31m'\nYELLOW='\\033[1;33m'\nNC='\\033[0m'\n\nclear\necho -e \"${CYAN}========================================${NC}\"\necho -e \"${GREEN}🚀 TERMUX SUPER AVTOMATIK O'RNATUVCHI 🚀${NC}\"\necho -e \"${CYAN}========================================${NC}\"\necho -e \"${YELLOW}Yaratuvchi: @Tommy_1727${NC}\"\necho -e \"\"\n\necho -e \"${GREEN}[1/3] Tizim yangilanmoqda...${NC}\"\npkg update -y && pkg upgrade -y || { echo -e \"${RED}❌ Yangilashda xatolik!${NC}\"; exit 1; }\n\necho -e \"${GREEN}[2/3] Kerakli paketlar o'rnatilmoqda...${NC}\"\n"
+        
+        pkg_installs, pip_installs, custom_commands = [], [], []
         for script_id in selected:
             cat_key, item_key = script_id.split("_", 1)
             item_data = SCRIPTS_DATA[cat_key]['items'][item_key]
-            
-            if item_data['type'] == 'pkg':
-                if item_data['pkg'] not in pkg_installs:
-                    pkg_installs.append(item_data['pkg'])
-            elif item_data['type'] == 'pip':
-                if item_data['pkg'] not in pip_installs:
-                    pip_installs.append(item_data['pkg'])
-            elif item_data['type'] == 'custom':
-                custom_commands.append(item_data['pkg'])
+            if item_data['type'] == 'pkg' and item_data['pkg'] not in pkg_installs: pkg_installs.append(item_data['pkg'])
+            elif item_data['type'] == 'pip' and item_data['pkg'] not in pip_installs: pip_installs.append(item_data['pkg'])
+            elif item_data['type'] == 'custom': custom_commands.append(item_data['pkg'])
 
-        if pkg_installs:
-            script_content += f"pkg install -y {' '.join(pkg_installs)}\n"
-        
+        if pkg_installs: script_content += f"pkg install -y {' '.join(pkg_installs)}\n"
         if custom_commands:
             script_content += "\necho -e \"${GREEN}[*] Qo'shimcha sozlamalar...${NC}\"\n"
-            for cmd in custom_commands:
-                script_content += f"{cmd}\n"
-
+            for cmd in custom_commands: script_content += f"{cmd}\n"
         if pip_installs:
-            script_content += f"\necho -e \"${{GREEN}}[3/3] Python kutubxonalari o'rnatilmoqda...${{NC}}\"\n"
+            script_content += f"\necho -e \"${{GREEN}}[3/3] Python kutubxonalari...${{NC}}\"\n"
             script_content += "pip install --upgrade pip || true\n"
             script_content += f"pip install {' '.join(pip_installs)}\n"
 
-        script_content += """
-echo -e ""
-echo -e "${CYAN}========================================${NC}"
-echo -e "${GREEN}✅ BARCHA DASTURLAR MUVAFFAQIYATLI O'RNATILDI!${NC}"
-echo -e "${CYAN}========================================${NC}"
-echo -e "${YELLOW}Dasturni ishga tushirish uchun uning nomini yozing.${NC}"
-echo -e "Masalan: python, nmap, git"
-echo -e ""
-"""
+        script_content += "\necho -e \"${CYAN}========================================${NC}\"\necho -e \"${GREEN}✅ BARCHA DASTURLAR O'RNATILDI!${NC}\"\necho -e \"${CYAN}========================================${NC}\"\n"
         
         script_file = BytesIO(script_content.encode('utf-8'))
         script_file.name = "install.sh"
-        
         await context.bot.send_document(chat_id=chat_id, document=script_file, caption=t['script_done'], parse_mode='Markdown')
         context.user_data['selected_scripts'] = []
 
@@ -530,24 +553,25 @@ echo -e ""
         if not db_pool: return await query.answer("Baza yo'q", show_alert=True)
         async with db_pool.acquire() as conn:
             total = await conn.fetchval('SELECT COUNT(*) FROM users')
+            prem_users = await conn.fetchval('SELECT COUNT(*) FROM users WHERE is_premium = TRUE')
             top_score = await conn.fetchval('SELECT MAX(score) FROM users')
-        text = f"📊 **Statistika**\n\n👥 Foydalanuvchilar: {total}\n🏆 Eng yuqori ball: {top_score}"
+        text = f"📊 **Statistika**\n\n👥 Jami: {total} ta\n💎 Premium: {prem_users} ta\n🏆 Eng yuqori: {top_score}"
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
-        
     elif data == "admin_points":
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_admin_points'
         await query.edit_message_text(t['admin_points_prompt'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
-
     elif data == "admin_bcast":
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_broadcast'
         await query.edit_message_text(t['admin_bcast_start'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
-
+    elif data == "admin_add_file":
+        if user_id != ADMIN_ID: return
+        context.user_data['state'] = 'in_add_file'
+        await query.edit_message_text(t['admin_file_wait'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
     elif data == "admin_menu":
         if user_id != ADMIN_ID: return
         await query.edit_message_text(t['admin_panel'], reply_markup=get_admin_keyboard(lang), parse_mode='Markdown')
-
     elif data == "admin_close":
         if user_id != ADMIN_ID: return
         await query.message.delete()
@@ -565,7 +589,8 @@ echo -e ""
         profile = await get_user_profile(user_id)
         if not profile: return await query.answer("Xatolik: /start bosing.")
         level = get_level(profile['score'])
-        text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'])
+        status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
+        text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
         await query.edit_message_text(text, reply_markup=get_profile_keyboard(lang), parse_mode='Markdown')
     elif data == "daily_bonus":
         success = await claim_daily_bonus(user_id)
@@ -573,12 +598,13 @@ echo -e ""
             await query.answer(t['bonus_claimed'], show_alert=True)
             profile = await get_user_profile(user_id)
             level = get_level(profile['score'])
-            text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'])
+            status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
+            text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
             await query.edit_message_text(text, reply_markup=get_profile_keyboard(lang), parse_mode='Markdown')
         else:
             await query.answer(t['bonus_wait'], show_alert=True)
     elif data == "top_users":
-        top_users = await get_top_users()
+        top_users = await get_top_users() # Bu funksiya qolgan kodda bor
         top_list = ""
         for i, u in enumerate(top_users):
             medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
@@ -607,8 +633,16 @@ echo -e ""
         try: await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
         except: pass
     elif data == "ai_start":
+        can_use, limit_left = await check_ai_limit(user_id)
+        if not can_use:
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_go_premium'], callback_data="premium_menu")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
+            return await query.edit_message_text(t['ai_limit_reached'], reply_markup=keyboard, parse_mode='Markdown')
+            
         context.user_data['state'] = 'in_ai'
-        await query.edit_message_text(t['ai_prompt'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]), parse_mode='Markdown')
+        prompt_text = t['ai_prompt']
+        if limit_left < 999:
+            prompt_text += "\n\n" + t['ai_limit_info'].format(limit=limit_left)
+        await query.edit_message_text(prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]), parse_mode='Markdown')
     elif data == "sec_start":
         try: await query.edit_message_text(text=t['sec_menu'], reply_markup=get_sec_menu(lang), parse_mode='Markdown')
         except: pass
@@ -636,8 +670,7 @@ echo -e ""
                 async with session.get(TERMUX_APK_URL) as response:
                     if response.status == 200:
                         apk_content = await response.read()
-                        if len(apk_content) > 50 * 1024 * 1024:
-                            await msg.edit_text(t['apk_too_big'], parse_mode='Markdown')
+                        if len(apk_content) > 50 * 1024 * 1024: await msg.edit_text(t['apk_too_big'], parse_mode='Markdown')
                         else:
                             apk_file = BytesIO(apk_content)
                             apk_file.name = t['apk_file_name']
@@ -807,6 +840,36 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('state') == 'in_ai':
         await handle_ai_message(update, context); return
 
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_add_file':
+        if update.message.document or update.message.video or update.message.photo:
+            if update.message.document: file_id = update.message.document.file_id; ftype = 'document'
+            elif update.message.video: file_id = update.message.video.file_id; ftype = 'video'
+            else: file_id = update.message.photo[-1].file_id; ftype = 'photo'
+            
+            context.user_data['temp_file_id'] = file_id
+            context.user_data['temp_file_type'] = ftype
+            context.user_data['state'] = 'in_file_title'
+            await update.message.reply_text(t['admin_file_title'], parse_mode='Markdown')
+        elif update.message.text == "/cancel":
+            context.user_data['state'] = None
+            await update.message.reply_text(t['admin_file_cancel'])
+        else:
+            await update.message.reply_text("⚠️ Iltimos fayl yuboring yoki /cancel bosing.")
+        return
+
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_file_title':
+        if update.message.text:
+            title = update.message.text
+            file_id = context.user_data.get('temp_file_id')
+            ftype = context.user_data.get('temp_file_type')
+            await add_file_db(title, file_id, ftype, is_premium=False) # Bepul fayl sifatida saqlanadi
+            await update.message.reply_text(t['admin_file_saved'])
+            context.user_data['state'] = None
+        elif update.message.text == "/cancel":
+            context.user_data['state'] = None
+            await update.message.reply_text(t['admin_file_cancel'])
+        return
+
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_admin_points':
         if update.message.text.isdigit():
             points = int(update.message.text)
@@ -880,7 +943,7 @@ async def on_startup():
     await application.initialize()
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Bot, Scripts PRO, Admin Panel va AI muvaffaqiyatli ishga tushdi!")
+    print(f"✅ Bot, Files, Premium (FREE), va AI muvaffaqiyatli ishga tushdi!")
 
 @app.on_event("shutdown")
 async def on_shutdown():
