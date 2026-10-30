@@ -231,7 +231,7 @@ TEXTS = {
         'admin_btn_points': "🎁 Hammaga ball berish", 'admin_btn_add_file': "➕ Fayl qo'shish",
         'admin_btn_close': "❌ Yopish",
         'admin_points_prompt': "🎁 **Aksiya!**\n\nBarcha foydalanuvchilarga qancha ball qo'shmoqchisiz? (Faqat raqam yozing)",
-        'admin_points_wait': "⏳ Ballar qo'shildi. Xabar yuborilmoqda...",
+        'admin_points_wait': "⏳ Ballar qo'shildi. Barchaga xabar yuborilmoqda...",
         'admin_points_done': "✅ **Aksiya yakunlandi!**\n\n🎁 Barchaga {points} ball qo'shildi.\n📩 Xabar yuborildi: {success} ta\n❌ Xatolik: {fail} ta",
         'admin_file_wait': "📂 **Faylni yuboring** (Hujjat, Video, Rasm, APK va h.k.):",
         'admin_file_title': "✍️ Endi ushbu fayl uchun **nomi va tavsifini** yozing:",
@@ -265,7 +265,7 @@ TEXTS = {
         'ai_file_too_large': "⚠️ Katta fayl.", 'ai_text_too_long': "⚠️ Uzun kod.", 'ai_not_coding': "🤖 Faqat dasturlash.",
         'ai_limit_info': "ℹ️ *Bugun uchun qolgan limitingiz: {limit} ta*"
     },
-    # Qolgan tillar (ru, en, ar) asosiy tarjimalar bilan, xatolik bermasligi uchun
+    # Qolgan tillar (ru, en, ar) asosiy tarjimalar bilan
     'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_files': "🗂 Файлы", 'btn_premium': "💎 Премиум", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'script_cat_menu': "📦 **Генератор**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Создать", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'files_menu': "🗂 **Файлы**", 'files_empty': "Нет файлов.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Только для Премиум!", 'premium_menu': "💎 **Премиум**\n\n50 Stars за 1 месяц.", 'btn_buy_premium': "⭐️ Купить за 50 Stars", 'premium_success': "🎉 Вы Премиум!", 'ai_limit_reached': "⚠️ Лимит (5/день). Купите Премиум.", 'btn_go_premium': "💎 Купить", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Файл", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Баллы:", 'admin_points_wait': "⏳ Рассылка...", 'admin_points_done': "✅ Добавлено {points}!\n📩 Отправлено: {success}\n❌ Ошибок: {fail}", 'admin_file_wait': "📂 Отправьте файл:", 'admin_file_title': "✍️ Название:", 'admin_file_saved': "✅ Сохранено!", 'admin_file_cancel': "❌ Отменено.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Завтра!", 'top_text': "🏆 **Топ 10:**\n{list}", 'quiz_start': "🧠 **Тест!** +10 очков.\n\n❓ *Вопрос:*", 'quiz_correct': "✅ **Верно!** (+10)", 'quiz_wrong': "❌ **Ошибка!** Ответ: **{answer}**", 'quiz_end': "🎉 Вы ответили на все вопросы! Начинаем заново.", 'btn_next_quiz': "➡️ Следующий", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Лимит: {limit}"},
     'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_files': "🗂 File Center", 'btn_premium': "💎 Premium", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'script_cat_menu': "📦 **Script Generator**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'files_menu': "🗂 **File Center**", 'files_empty': "No files yet.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Premium only!", 'premium_menu': "💎 **Premium**\n\n50 Stars for 1 month.", 'btn_buy_premium': "⭐️ Buy for 50 Stars", 'premium_success': "🎉 You are Premium!", 'ai_limit_reached': "⚠️ Limit reached (5/day). Buy Premium.", 'btn_go_premium': "💎 Go Premium", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Add File", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Points to add:", 'admin_points_wait': "⏳ Sending...", 'admin_points_done': "✅ Added {points}!\n📩 Sent: {success}\n❌ Failed: {fail}", 'admin_file_wait': "📂 Send file:", 'admin_file_title': "✍️ File title:", 'admin_file_saved': "✅ Saved!", 'admin_file_cancel': "❌ Cancelled.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Tomorrow!", 'top_text': "🏆 **Top 10:**\n{list}", 'quiz_start': "🧠 **Quiz!** +10 points.\n\n❓ *Question:*", 'quiz_correct': "✅ **Correct!** (+10)", 'quiz_wrong': "❌ **Wrong!** Answer: **{answer}**", 'quiz_end': "🎉 You've answered all questions! Starting over.", 'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Remaining: {limit}"},
     'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_files': "🗂 الملفات", 'btn_premium': "💎 بريميوم", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'script_cat_menu': "📦 **مولد**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'files_menu': "🗂 **الملفات**", 'files_empty': "لا توجد ملفات.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 بريميوم فقط!", 'premium_menu': "💎 **بريميوم**\n\n50 نجمة لمدة شهر.", 'btn_buy_premium': "⭐️ شراء بـ 50 نجمة", 'premium_success': "🎉 أنت بريميوم!", 'ai_limit_reached': "⚠️ الحد (5/يوم). اشتري بريميوم.", 'btn_go_premium': "💎 اشتري", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ ملف", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 نقاط:", 'admin_points_wait': "⏳ جاري الإرسال...", 'admin_points_done': "✅ أضيفت {points}!\n📩 المرسل: {success}\n❌ الفشل: {fail}", 'admin_file_wait': "📂 أرسل ملفاً:", 'admin_file_title': "✍️ اسم الملف:", 'admin_file_saved': "✅ تم الحفظ!", 'admin_file_cancel': "❌ ملغي.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ غداً!", 'top_text': "🏆 **أفضل 10:**\n{list}", 'quiz_start': "🧠 **اختبار!** +10 نقاط.\n\n❓ *سؤال:*", 'quiz_correct': "✅ **صحيح!** (+10)", 'quiz_wrong': "❌ **خطأ!** الجواب: **{answer}**", 'quiz_end': "🎉 أجبت على جميع الأسئلة! نبدأ من جديد.", 'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ المتبقي: {limit}"}
@@ -428,7 +428,6 @@ def get_cheatsheet_keyboard(lang):
 def get_quiz_keyboard(options, correct_answer, lang):
     t = TEXTS[lang]
     keyboard, row = [], []
-    # Variantlarni aralashtirish
     shuffled_options = options.copy()
     random.shuffle(shuffled_options)
     
@@ -652,22 +651,18 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(t['top_text'].format(list=top_list), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]), parse_mode='Markdown')
 
     # ==========================================
-    # YANGILANGAN TEST LOGIKASI (TAKRORLANMAYDI)
+    # YANGILANGAN TEST LOGIKASI
     # ==========================================
     elif data == "quiz_start":
-        # Foydalanuvchi ko'rgan savollar ro'yxatini tekshirish
         if 'seen_questions' not in context.user_data:
             context.user_data['seen_questions'] = []
             
-        # Barcha savollar ko'rilgan bo'lsa, ro'yxatni tozalash (qaytadan boshlash)
         if len(context.user_data['seen_questions']) >= len(QUIZ_DATA):
             context.user_data['seen_questions'] = []
             await query.message.reply_text(t['quiz_end'])
             
-        # Ko'rilmagan savollarni filtrlash
         available_indices = [i for i in range(len(QUIZ_DATA)) if i not in context.user_data['seen_questions']]
         
-        # Tasodifiy savol tanlash
         chosen_idx = random.choice(available_indices)
         context.user_data['seen_questions'].append(chosen_idx)
         context.user_data['current_quiz'] = QUIZ_DATA[chosen_idx]
@@ -963,9 +958,11 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = await update.message.reply_text(t['admin_points_wait'], parse_mode='Markdown')
             
             success, fail = 0, 0
+            total_users = 0
             if db_pool:
                 async with db_pool.acquire() as conn:
                     users = await conn.fetch('SELECT user_id FROM users')
+                    total_users = len(users)
                 
                 broadcast_text = f"🎁 **Aksiya!**\n\nAdmin tomonidan barcha foydalanuvchilarga **+{points} ball** qo'shildi! 🎉\n\nProfilingizga kirib tekshirishingiz mumkin."
                 
@@ -1015,6 +1012,8 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not db_pool: return
     async with db_pool.acquire() as conn:
         users = await conn.fetch('SELECT user_id FROM users')
+        total_users = len(users)
+        
     success, fail = 0, 0
     for u in users:
         if u['user_id'] == ADMIN_ID: continue
@@ -1022,8 +1021,9 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.copy_message(chat_id=u['user_id'], from_chat_id=update.message.chat_id, message_id=update.message.message_id)
             success += 1; await asyncio.sleep(0.05)
         except Exception: fail += 1
+        
     context.user_data['state'] = None
-    await msg.edit_text(f"✅ Yakunlandi!\nYuborildi: {success}\nXatolik: {fail}")
+    await msg.edit_text(f"✅ Yakunlandi!\nBazada jami: {total_users} ta\nYuborildi: {success}\nXatolik: {fail}")
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
