@@ -4,3 +4,4 @@ uvicorn
 aiohttp
 asyncpg
 openai
+google-genai
