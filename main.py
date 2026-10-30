@@ -367,14 +367,14 @@ QUIZ_DATA = [
 ]
 
 # ==========================================
-# KLAVIATURALAR (IXCHAM 2 USTUNLI)
+# KLAVIATURALAR (IXCHAM 2 USTUNLI VA ADMIN YASHIRIN)
 # ==========================================
 def get_lang_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")], [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")]])
 
-def get_main_menu(lang):
+def get_main_menu(lang, user_id):
     t = TEXTS[lang]
-    return InlineKeyboardMarkup([
+    keyboard = [
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
         [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
         [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
@@ -383,9 +383,14 @@ def get_main_menu(lang):
         [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start"), InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
         [InlineKeyboardButton(t['btn_top'], callback_data="top_users"), InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
         [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
-        [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")],
-        [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")] 
-    ])
+        [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
+    ]
+    
+    # FAQAT ADMIN UCHUN KO'RINADIGAN TUGMA
+    if user_id == ADMIN_ID:
+        keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")])
+        
+    return InlineKeyboardMarkup(keyboard)
 
 def get_theme_keyboard(lang):
     t = TEXTS[lang]
@@ -752,7 +757,7 @@ color15=#ffffff
         lang = data.split("_")[1]
         context.user_data['lang'] = lang
         await add_user(user_id, lang)
-        await edit_or_send(query, context, TEXTS[lang]['welcome'], get_main_menu(lang))
+        await edit_or_send(query, context, TEXTS[lang]['welcome'], get_main_menu(lang, user_id))
     elif data == "change_lang":
         context.user_data.pop('lang', None)
         await edit_or_send(query, context, TEXTS['uz']['choose_lang'], get_lang_keyboard())
@@ -912,7 +917,7 @@ color15=#ffffff
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
     elif data == "back_to_start":
         context.user_data['state'] = None
-        await edit_or_send(query, context, t['welcome'], get_main_menu(lang))
+        await edit_or_send(query, context, t['welcome'], get_main_menu(lang, user_id))
 
 # ==========================================
 # PRE-CHECKOUT VA TO'LOVNI QABUL QILISH
@@ -932,7 +937,7 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     payment_info = update.message.successful_payment
     if payment_info.invoice_payload == "premium_sub_payload":
         await make_premium(user_id)
-        await update.message.reply_text(t['premium_success'], parse_mode='Markdown', reply_markup=get_main_menu(lang))
+        await update.message.reply_text(t['premium_success'], parse_mode='Markdown', reply_markup=get_main_menu(lang, user_id))
 
 # ==========================================
 # AI LOGIKASI
@@ -1162,7 +1167,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_msg = f"📩 Yangi murojaat!\n\n👤 Kimdan: {user.first_name} (@{user.username})\n🆔 ID: {user.id}\n\n💬 Xabar: {update.message.text}"
             try:
                 await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
-                await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang))
+                await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang, user.id))
             except Exception: pass
             context.user_data['state'] = None
         return
