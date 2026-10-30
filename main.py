@@ -115,11 +115,7 @@ def get_level(score):
     elif score < 600: return "🥇 Ilg'or"
     else: return "💎 Ekspert"
 
-# ==========================================
-# YORDAMCHI FUNKSIYALAR
-# ==========================================
 async def is_subscribed(user_id, context):
-    # Admin har doim ruxsatga ega
     if user_id == ADMIN_ID: return True 
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
@@ -128,15 +124,59 @@ async def is_subscribed(user_id, context):
     except Exception:
         return True
 
-# Skriptlar ro'yxati
-SCRIPTS_LIST = {
-    "python": {"name": "🐍 Python", "cmd": "python python-pip"},
-    "git": {"name": "🐙 Git", "cmd": "git"},
-    "node": {"name": "🟢 Node.js", "cmd": "nodejs"},
-    "ffmpeg": {"name": "🎬 FFmpeg", "cmd": "ffmpeg"},
-    "nmap": {"name": "🌐 Nmap", "cmd": "nmap"},
-    "curl": {"name": "📡 Curl", "cmd": "curl"},
-    "nano": {"name": "📝 Nano", "cmd": "nano"},
+# ==========================================
+# SUPER SKRIPTLAR BAZASI
+# ==========================================
+SCRIPTS_DATA = {
+    "dev": {
+        "name": "💻 Dasturlash",
+        "items": {
+            "python": {"name": "🐍 Python", "pkg": "python", "type": "pkg"},
+            "git": {"name": "🐙 Git", "pkg": "git", "type": "pkg"},
+            "node": {"name": "🟢 Node.js", "pkg": "nodejs", "type": "pkg"},
+            "curl": {"name": "📡 Curl", "pkg": "curl", "type": "pkg"},
+            "wget": {"name": "📥 Wget", "pkg": "wget", "type": "pkg"},
+            "nano": {"name": "📝 Nano", "pkg": "nano", "type": "pkg"},
+            "vim": {"name": "📝 Vim", "pkg": "vim", "type": "pkg"},
+            "micro": {"name": "📝 Micro", "pkg": "micro", "type": "pkg"},
+        }
+    },
+    "hacking": {
+        "name": "🛡️ Kiberxavfsizlik",
+        "items": {
+            "nmap": {"name": "🌐 Nmap", "pkg": "nmap", "type": "pkg"},
+            "hydra": {"name": "🔑 Hydra", "pkg": "hydra", "type": "pkg"},
+            "sqlmap": {"name": "💥 SQLmap", "pkg": "sqlmap", "type": "pip"},
+            "metasploit": {"name": "💀 Metasploit", "pkg": "metasploit", "type": "pkg"},
+            "john": {"name": "🔓 John The Ripper", "pkg": "john", "type": "pkg"},
+            "nikto": {"name": "🕵️ Nikto", "pkg": "nikto", "type": "pkg"},
+            "aircrack": {"name": "📡 Aircrack-ng", "pkg": "aircrack-ng", "type": "pkg"},
+            "tshark": {"name": "🦈 Tshark", "pkg": "tshark", "type": "pkg"},
+        }
+    },
+    "media": {
+        "name": "🎬 Media va Tarmoq",
+        "items": {
+            "ffmpeg": {"name": "🎞️ FFmpeg", "pkg": "ffmpeg", "type": "pkg"},
+            "ytdlp": {"name": "📥 yt-dlp (Video yuklovchi)", "pkg": "yt-dlp", "type": "pip"},
+            "imagemagick": {"name": "🖼️ ImageMagick", "pkg": "imagemagick", "type": "pkg"},
+            "openssh": {"name": "🔐 OpenSSH", "pkg": "openssh", "type": "pkg"},
+            "net-tools": {"name": "🌐 Net-tools", "pkg": "net-tools", "type": "pkg"},
+            "traceroute": {"name": "🛣️ Traceroute", "pkg": "traceroute", "type": "pkg"},
+            "dnsutils": {"name": "🔍 DNS Utils", "pkg": "dnsutils", "type": "pkg"},
+        }
+    },
+    "style": {
+        "name": "🎨 Termuxni Chiroyli Qilish",
+        "items": {
+            "zsh": {"name": "🐚 Zsh", "pkg": "zsh", "type": "pkg"},
+            "ohmyzsh": {"name": "✨ Oh-My-Zsh", "pkg": "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash", "type": "custom"},
+            "termuxstyle": {"name": "🎨 Termux Styling", "pkg": "termux-styling", "type": "pkg"},
+            "figlet": {"name": "🔠 Figlet (Yozuvlar)", "pkg": "figlet", "type": "pkg"},
+            "lolcat": {"name": "🌈 Lolcat", "pkg": "lolcat", "type": "pkg"},
+            "neofetch": {"name": "💻 Neofetch", "pkg": "neofetch", "type": "pkg"},
+        }
+    }
 }
 
 # ==========================================
@@ -156,24 +196,27 @@ TEXTS = {
         'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat",
         'btn_cheatsheet': "📜 Buyruqlar", 'btn_change_lang': "🌐 Til",
-        'btn_scripts': "📦 Skript Yaratish", # YANGI
+        'btn_scripts': "📦 Skript Yaratish",
         'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
         'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
         
         'force_sub_text': f"⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
         
-        # Skript Yaratish
-        'script_menu': "📦 **Termux Skript Yaratuvchi**\n\nKerakli dasturlarni tanlang. Bot sizga bitta tugma bilan hammasini o'rnatib beruvchi `.sh` fayl tayyorlab beradi.\n\n👇 *Tanlang:*",
-        'btn_generate_script': "⚙️ Skriptni yaratish",
+        # Skript Yaratish (PRO)
+        'script_cat_menu': "📦 **Termux Skript Yaratuvchi (PRO)**\n\nKerakli bo'limni tanlang. U yerdan dasturlarni belgilab, bitta mukammal skript yasab olasiz:",
+        'script_items_menu': "⚙️ **{cat_name}**\n\nKerakli dasturlarni tanlang (✅ - tanlandi):",
+        'btn_generate_script': "🚀 Skriptni yaratish",
+        'btn_clear_scripts': "🗑 Tozalash",
+        'btn_back_to_cats': "🔙 Bo'limlarga qaytish",
         'script_empty': "⚠️ Iltimos, avval kamida bitta dasturni tanlang!",
-        'script_done': "✅ **Skriptingiz tayyor!**\n\nUni Termux'da ishga tushirish uchun quyidagi buyruqni yozing:\n`bash install.sh`",
+        'script_done': "✅ **Sizning mukammal skriptingiz tayyor!**\n\nUni yuklab oling va Termux'da quyidagi buyruq bilan ishga tushiring:\n\n`bash install.sh`\n\n_Skript o'zi `pkg update` qiladi, xatolarni tekshiradi va dasturlarni o'rnatadi._",
 
         # Admin Panel
         'admin_panel': "👑 **Admin Boshqaruv Paneli**\n\nKerakli bo'limni tanlang:",
         'admin_btn_stats': "📊 Statistika", 'admin_btn_bcast': "📢 Xabar yuborish",
         'admin_btn_points': "🎁 Hammaga ball berish", 'admin_btn_close': "❌ Yopish",
-        'admin_points_prompt': "🎁 **Aksiya!**\n\nBarcha foydalanuvchilarga qancha ball qo'shmoqchisiz? (Faqat raqam yozing, masalan: 50)",
+        'admin_points_prompt': "🎁 **Aksiya!**\n\nBarcha foydalanuvchilarga qancha ball qo'shmoqchisiz? (Faqat raqam yozing)",
         'admin_points_done': "✅ Barcha foydalanuvchilarga {points} ball qo'shildi!",
 
         'text_page': "📚 **Darsliklar**\n\nSahifa: {page} / 5",
@@ -198,10 +241,10 @@ TEXTS = {
         'ai_vision_error': "⚠️ Rasm xato.", 'ai_unsupported_file': "⚠️ Faqat kod fayllari.", 'ai_video_error': "🎥 Video yo'q.",
         'ai_file_too_large': "⚠️ Katta fayl.", 'ai_text_too_long': "⚠️ Uzun kod.", 'ai_not_coding': "🤖 Faqat dasturlash."
     },
-    # RU, EN, AR uchun asosiy tarjimalar qisqartirildi (xatolik bermasligi uchun)
-    'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'script_menu': "📦 **Генератор скриптов**\n\nВыберите программы:", 'btn_generate_script': "⚙️ Создать скрипт", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊 Статистика", 'admin_btn_bcast': "📢 Рассылка", 'admin_btn_points': "🎁 Дать всем баллы", 'admin_btn_close': "❌ Закрыть", 'admin_points_prompt': "🎁 Сколько баллов добавить всем?", 'admin_points_done': "✅ Добавлено {points} баллов!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **Совет:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n\n⭐ Очки: {score}\n🏅 Уровень: {level}\n📊 Место: #{rank}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20 очков!", 'bonus_wait': "⏳ Приходите завтра!", 'top_text': "🏆 **Топ 10:**\n\n{list}", 'quiz_start': "🧠 Тест (+10 очков)", 'quiz_correct': "✅ +10 очков!", 'quiz_wrong': "❌ Ответ: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"},
-    'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'script_menu': "📦 **Script Generator**\n\nSelect programs:", 'btn_generate_script': "⚙️ Generate", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊 Stats", 'admin_btn_bcast': "📢 Broadcast", 'admin_btn_points': "🎁 Give points to all", 'admin_btn_close': "❌ Close", 'admin_points_prompt': "🎁 How many points to add to all?", 'admin_points_done': "✅ Added {points} points!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **Tip:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n\n⭐ Score: {score}\n🏅 Level: {level}\n📊 Rank: #{rank}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20 points!", 'bonus_wait': "⏳ Come back tomorrow!", 'top_text': "🏆 **Top 10:**\n\n{list}", 'quiz_start': "🧠 Quiz (+10 pts)", 'quiz_correct': "✅ +10 points!", 'quiz_wrong': "❌ Answer: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"},
-    'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'script_menu': "📦 **مولد السكريبت**\n\nاختر البرامج:", 'btn_generate_script': "⚙️ إنشاء", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊 إحصائيات", 'admin_btn_bcast': "📢 بث", 'admin_btn_points': "🎁 نقاط للجميع", 'admin_btn_close': "❌ إغلاق", 'admin_points_prompt': "🎁 كم نقطة تضيف للجميع؟", 'admin_points_done': "✅ أضيفت {points} نقطة!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **نصيحة:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n\n⭐ النقاط: {score}\n🏅 المستوى: {level}\n📊 الترتيب: #{rank}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20 نقطة!", 'bonus_wait': "⏳ عد غداً!", 'top_text': "🏆 **أفضل 10:**\n\n{list}", 'quiz_start': "🧠 اختبار (+10)", 'quiz_correct': "✅ +10 نقاط!", 'quiz_wrong': "❌ الجواب: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"}
+    # Qolgan tillar (ru, en, ar) avvalgidek qoladi, xatolik bermasligi uchun asosiy kalitlar
+    'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'script_cat_menu': "📦 **Генератор скриптов**\n\nВыберите категорию:", 'script_items_menu': "⚙️ **{cat_name}**\n\nВыберите программы:", 'btn_generate_script': "🚀 Создать скрипт", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово! Запустите: `bash install.sh`", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊 Статистика", 'admin_btn_bcast': "📢 Рассылка", 'admin_btn_points': "🎁 Дать всем баллы", 'admin_btn_close': "❌ Закрыть", 'admin_points_prompt': "🎁 Сколько баллов добавить?", 'admin_points_done': "✅ Добавлено {points} баллов!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **Совет:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n\n⭐ Очки: {score}\n🏅 Уровень: {level}\n📊 Место: #{rank}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20 очков!", 'bonus_wait': "⏳ Приходите завтра!", 'top_text': "🏆 **Топ 10:**\n\n{list}", 'quiz_start': "🧠 Тест (+10 очков)", 'quiz_correct': "✅ +10 очков!", 'quiz_wrong': "❌ Ответ: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"},
+    'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'script_cat_menu': "📦 **Script Generator**\n\nSelect category:", 'script_items_menu': "⚙️ **{cat_name}**\n\nSelect programs:", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done! Run: `bash install.sh`", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊 Stats", 'admin_btn_bcast': "📢 Broadcast", 'admin_btn_points': "🎁 Give points to all", 'admin_btn_close': "❌ Close", 'admin_points_prompt': "🎁 How many points to add?", 'admin_points_done': "✅ Added {points} points!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **Tip:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n\n⭐ Score: {score}\n🏅 Level: {level}\n📊 Rank: #{rank}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20 points!", 'bonus_wait': "⏳ Come back tomorrow!", 'top_text': "🏆 **Top 10:**\n\n{list}", 'quiz_start': "🧠 Quiz (+10 pts)", 'quiz_correct': "✅ +10 points!", 'quiz_wrong': "❌ Answer: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"},
+    'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'script_cat_menu': "📦 **مولد السكريبت**\n\nاختر الفئة:", 'script_items_menu': "⚙️ **{cat_name}**\n\nاختر البرامج:", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز! شغله بـ: `bash install.sh`", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊 إحصائيات", 'admin_btn_bcast': "📢 بث", 'admin_btn_points': "🎁 نقاط للجميع", 'admin_btn_close': "❌ إغلاق", 'admin_points_prompt': "🎁 كم نقطة تضيف للجميع؟", 'admin_points_done': "✅ أضيفت {points} نقطة!", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌", 'tip_header': "💡 **نصيحة:**\n\n", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n\n⭐ النقاط: {score}\n🏅 المستوى: {level}\n📊 الترتيب: #{rank}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20 نقطة!", 'bonus_wait': "⏳ عد غداً!", 'top_text': "🏆 **أفضل 10:**\n\n{list}", 'quiz_start': "🧠 اختبار (+10)", 'quiz_correct': "✅ +10 نقاط!", 'quiz_wrong': "❌ الجواب: **{answer}**", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖"}
 }
 
 TIPS = [{'uz': "**Tezroq kod yozish:**\n`nano` o'rniga `micro` ishlating.", 'ru': "**Быстрое написание:**\nИспользуйте `micro`.", 'en': "**Faster coding:**\nUse `micro`.", 'ar': "**برمجة أسرع:**\nاستخدم `micro`."}]
@@ -224,7 +267,7 @@ def get_main_menu(lang):
     t = TEXTS[lang]
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_ai'], callback_data="ai_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")], # Skript qo'shildi
+        [InlineKeyboardButton(t['btn_ai'], callback_data="ai_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
         [InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start"), InlineKeyboardButton(t['btn_top'], callback_data="top_users")],
         [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
         [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet"), InlineKeyboardButton(t['btn_security'], callback_data="sec_start")],
@@ -232,20 +275,32 @@ def get_main_menu(lang):
         [InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
     ])
 
-def get_script_keyboard(lang, selected_scripts):
+def get_script_categories_keyboard(lang):
     t = TEXTS[lang]
     keyboard = []
     row = []
-    for key, data in SCRIPTS_LIST.items():
-        # Tanlangan bo'lsa ✅, aks holda ⬜
-        status = "✅ " if key in selected_scripts else "⬜ "
-        row.append(InlineKeyboardButton(f"{status}{data['name']}", callback_data=f"script_toggle_{key}"))
+    for cat_key, cat_data in SCRIPTS_DATA.items():
+        row.append(InlineKeyboardButton(cat_data['name'], callback_data=f"script_cat_{cat_key}"))
+        if len(row) == 2:
+            keyboard.append(row); row = []
+    if row: keyboard.append(row)
+    keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+    return InlineKeyboardMarkup(keyboard)
+
+def get_script_items_keyboard(cat_key, lang, selected_scripts):
+    t = TEXTS[lang]
+    cat_data = SCRIPTS_DATA[cat_key]
+    keyboard = []
+    row = []
+    for item_key, item_data in cat_data['items'].items():
+        status = "✅ " if f"{cat_key}_{item_key}" in selected_scripts else "⬜ "
+        row.append(InlineKeyboardButton(f"{status}{item_data['name']}", callback_data=f"script_toggle_{cat_key}_{item_key}"))
         if len(row) == 2:
             keyboard.append(row); row = []
     if row: keyboard.append(row)
     
-    keyboard.append([InlineKeyboardButton(t['btn_generate_script'], callback_data="script_generate")])
-    keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+    keyboard.append([InlineKeyboardButton(t['btn_generate_script'], callback_data="script_generate"), InlineKeyboardButton(t['btn_clear_scripts'], callback_data="script_clear")])
+    keyboard.append([InlineKeyboardButton(t['btn_back_to_cats'], callback_data="script_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 def get_admin_keyboard(lang):
@@ -364,33 +419,104 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
-    # --- SKRIPT YARATUVCHI ---
+    # --- SUPER SKRIPT YARATUVCHI ---
     if data == "script_menu":
-        context.user_data['selected_scripts'] = []
-        await query.edit_message_text(t['script_menu'], reply_markup=get_script_keyboard(lang, []), parse_mode='Markdown')
-        
+        await query.edit_message_text(t['script_cat_menu'], reply_markup=get_script_categories_keyboard(lang), parse_mode='Markdown')
+    
+    elif data.startswith("script_cat_"):
+        cat_key = data.replace("script_cat_", "")
+        if 'selected_scripts' not in context.user_data: context.user_data['selected_scripts'] = []
+        cat_name = SCRIPTS_DATA[cat_key]['name']
+        text = t['script_items_menu'].format(cat_name=cat_name)
+        await query.edit_message_text(text, reply_markup=get_script_items_keyboard(cat_key, lang, context.user_data['selected_scripts']), parse_mode='Markdown')
+
     elif data.startswith("script_toggle_"):
-        script_key = data.replace("script_toggle_", "")
+        parts = data.replace("script_toggle_", "").split("_", 1)
+        cat_key, item_key = parts[0], parts[1]
+        script_id = f"{cat_key}_{item_key}"
         selected = context.user_data.get('selected_scripts', [])
-        if script_key in selected: selected.remove(script_key)
-        else: selected.append(script_key)
-        context.user_data['selected_scripts'] = selected
-        await query.edit_message_reply_markup(reply_markup=get_script_keyboard(lang, selected))
         
+        if script_id in selected: selected.remove(script_id)
+        else: selected.append(script_id)
+        context.user_data['selected_scripts'] = selected
+        
+        cat_name = SCRIPTS_DATA[cat_key]['name']
+        text = t['script_items_menu'].format(cat_name=cat_name)
+        await query.edit_message_reply_markup(reply_markup=get_script_items_keyboard(cat_key, lang, selected))
+
+    elif data == "script_clear":
+        context.user_data['selected_scripts'] = []
+        await query.answer("🗑 Barcha tanlovlar tozalandi!")
+        # Ekranni yangilash uchun hozirgi kategoriyani qayta chaqiramiz (oxirgi bosilganini topish qiyin, shunchaki menyuga qaytaramiz)
+        await query.edit_message_text(t['script_cat_menu'], reply_markup=get_script_categories_keyboard(lang), parse_mode='Markdown')
+
     elif data == "script_generate":
         selected = context.user_data.get('selected_scripts', [])
         if not selected:
             await query.answer(t['script_empty'], show_alert=True)
             return
             
-        script_content = "#!/data/data/com.termux/files/usr/bin/bash\n\n"
-        script_content += "echo '--- Skript ishga tushdi ---'\n"
-        script_content += "pkg update -y && pkg upgrade -y\n"
-        
-        for key in selected:
-            script_content += f"pkg install {SCRIPTS_LIST[key]['cmd']} -y\n"
+        # IDEAL SKRIPT YASASH
+        script_content = """#!/data/data/com.termux/files/usr/bin/bash
+
+# Ranglar
+GREEN='\\033[0;32m'
+CYAN='\\033[0;36m'
+RED='\\033[0;31m'
+YELLOW='\\033[1;33m'
+NC='\\033[0m' # No Color
+
+clear
+echo -e "${CYAN}========================================${NC}"
+echo -e "${GREEN}🚀 TERMUX SUPER AVTOMATIK O'RNATUVCHI 🚀${NC}"
+echo -e "${CYAN}========================================${NC}"
+echo -e "${YELLOW}Yaratuvchi: @Tommy_1727${NC}"
+echo -e ""
+
+echo -e "${GREEN}[1/3] Tizim yangilanmoqda... (Bu biroz vaqt olishi mumkin)${NC}"
+pkg update -y && pkg upgrade -y || { echo -e "${RED}❌ Yangilashda xatolik!${NC}"; exit 1; }
+
+echo -e "${GREEN}[2/3] Kerakli paketlar o'rnatilmoqda...${NC}"
+"""
+        pkg_installs = []
+        pip_installs = []
+        custom_commands = []
+
+        for script_id in selected:
+            cat_key, item_key = script_id.split("_", 1)
+            item_data = SCRIPTS_DATA[cat_key]['items'][item_key]
             
-        script_content += "echo '--- Barcha dasturlar muvaffaqiyatli o'rnatildi! ---'\n"
+            if item_data['type'] == 'pkg':
+                if item_data['pkg'] not in pkg_installs:
+                    pkg_installs.append(item_data['pkg'])
+            elif item_data['type'] == 'pip':
+                if item_data['pkg'] not in pip_installs:
+                    pip_installs.append(item_data['pkg'])
+            elif item_data['type'] == 'custom':
+                custom_commands.append(item_data['pkg'])
+
+        if pkg_installs:
+            script_content += f"pkg install -y {' '.join(pkg_installs)}\n"
+        
+        if custom_commands:
+            script_content += "\necho -e \"${GREEN}[*] Qo'shimcha sozlamalar...${NC}\"\n"
+            for cmd in custom_commands:
+                script_content += f"{cmd}\n"
+
+        if pip_installs:
+            script_content += f"\necho -e \"${{GREEN}}[3/3] Python kutubxonalari o'rnatilmoqda...${{NC}}\"\n"
+            script_content += "pip install --upgrade pip || true\n"
+            script_content += f"pip install {' '.join(pip_installs)}\n"
+
+        script_content += """
+echo -e ""
+echo -e "${CYAN}========================================${NC}"
+echo -e "${GREEN}✅ BARCHA DASTURLAR MUVAFFAQIYATLI O'RNATILDI!${NC}"
+echo -e "${CYAN}========================================${NC}"
+echo -e "${YELLOW}Dasturni ishga tushirish uchun uning nomini yozing.${NC}"
+echo -e "Masalan: python, nmap, git"
+echo -e ""
+"""
         
         script_file = BytesIO(script_content.encode('utf-8'))
         script_file.name = "install.sh"
@@ -742,7 +868,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("admin", admin_panel)) # Faqat admin panel
+application.add_handler(CommandHandler("admin", admin_panel)) 
 application.add_handler(CallbackQueryHandler(button_tap))
 application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_messages))
 
@@ -754,7 +880,7 @@ async def on_startup():
     await application.initialize()
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Bot, Scripts, Admin Panel va AI muvaffaqiyatli ishga tushdi!")
+    print(f"✅ Bot, Scripts PRO, Admin Panel va AI muvaffaqiyatli ishga tushdi!")
 
 @app.on_event("shutdown")
 async def on_shutdown():
