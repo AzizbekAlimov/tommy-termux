@@ -30,9 +30,9 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 
 ADMIN_ID = 7383782449
 
-# KANALLARNI AJRATDIM!
-FORCE_SUB_CHANNEL = "@Tommy_cheat"    # Majburiy obuna uchun
-VIDEO_CHANNEL = "@termux_tutoril"     # Videolar uchun
+# KANALLAR
+FORCE_SUB_CHANNEL = "@Tommy_cheat"    # Majburiy obuna
+VIDEO_CHANNEL = "@termux_tutoril"     # Videolar
 
 TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_arm64-v8a.apk"
 
@@ -47,6 +47,21 @@ groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/o
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 db_pool = None
+
+# ==========================================
+# YORDAMCHI FUNKSIYA (VIDEO OSTIDAGI TUGMALAR UCHUN)
+# ==========================================
+async def edit_or_send(query, context, text, reply_markup):
+    try:
+        # Avval xabarni tahrirlashga urinib ko'ramiz
+        await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
+    except Exception:
+        # Agar xabar video/rasm bo'lsa, uni o'chirib, yangi xabar yuboramiz
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ==========================================
 # MA'LUMOTLAR BAZASI
@@ -272,7 +287,7 @@ TEXTS = {
         'ai_file_too_large': "⚠️ Katta fayl.", 'ai_text_too_long': "⚠️ Uzun kod.", 'ai_not_coding': "🤖 Faqat dasturlash.",
         'ai_limit_info': "ℹ️ *Bugun uchun qolgan limitingiz: {limit} ta*"
     },
-    # Qolgan tillar (ru, en, ar) - asosiy tarjimalar bilan qoldirildi
+    # Qolgan tillar (ru, en, ar) asosiy tarjimalar bilan
     'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_files': "🗂 Файлы", 'btn_premium': "💎 Премиум", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 ПОЛУЧИТЬ PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'script_cat_menu': "📦 **Генератор**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Создать", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'files_menu': "🗂 **Файлы**", 'files_empty': "Нет файлов.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Только для Премиум!", 'premium_menu': "💎 **Премиум**\n\n50 Stars за 1 месяц.", 'btn_buy_premium': "⭐️ Купить за 50 Stars", 'premium_success': "🎉 Вы Премиум!", 'ai_limit_reached': "⚠️ Лимит (5/день). Купите Премиум.", 'btn_go_premium': "💎 Купить", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Файл", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Баллы:", 'admin_points_wait': "⏳ Рассылка...", 'admin_points_done': "✅ Добавлено {points}!\n📩 Отправлено: {success}\n❌ Ошибок: {fail}", 'admin_file_wait': "📂 Отправьте файл:", 'admin_file_title': "✍️ Название:", 'admin_file_saved': "✅ Сохранено!", 'admin_file_cancel': "❌ Отменено.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Ошибка! Видео не найдено.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Завтра!", 'top_text': "🏆 **Топ 10:**\n{list}", 'quiz_start': "🧠 **Тест!** +10 очков.\n\n❓ *Вопрос:*", 'quiz_correct': "✅ **Верно!** (+10)", 'quiz_wrong': "❌ **Ошибка!** Ответ: **{answer}**", 'quiz_end': "🎉 Вы ответили на все вопросы! Начинаем заново.", 'btn_next_quiz': "➡️ Следующий", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Лимит: {limit}"},
     'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_files': "🗂 File Center", 'btn_premium': "💎 Premium", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 GET PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'script_cat_menu': "📦 **Script Generator**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'files_menu': "🗂 **File Center**", 'files_empty': "No files yet.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Premium only!", 'premium_menu': "💎 **Premium**\n\n50 Stars for 1 month.", 'btn_buy_premium': "⭐️ Buy for 50 Stars", 'premium_success': "🎉 You are Premium!", 'ai_limit_reached': "⚠️ Limit reached (5/day). Buy Premium.", 'btn_go_premium': "💎 Go Premium", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Add File", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Points to add:", 'admin_points_wait': "⏳ Sending...", 'admin_points_done': "✅ Added {points}!\n📩 Sent: {success}\n❌ Failed: {fail}", 'admin_file_wait': "📂 Send file:", 'admin_file_title': "✍️ File title:", 'admin_file_saved': "✅ Saved!", 'admin_file_cancel': "❌ Cancelled.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Error! Video not found.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Tomorrow!", 'top_text': "🏆 **Top 10:**\n{list}", 'quiz_start': "🧠 **Quiz!** +10 points.\n\n❓ *Question:*", 'quiz_correct': "✅ **Correct!** (+10)", 'quiz_wrong': "❌ **Wrong!** Answer: **{answer}**", 'quiz_end': "🎉 You've answered all questions! Starting over.", 'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Remaining: {limit}"},
     'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_files': "🗂 الملفات", 'btn_premium': "💎 بريميوم", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 الحصول على PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'script_cat_menu': "📦 **مولد**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'files_menu': "🗂 **الملفات**", 'files_empty': "لا توجد ملفات.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 بريميوم فقط!", 'premium_menu': "💎 **بريميوم**\n\n50 نجمة لمدة شهر.", 'btn_buy_premium': "⭐️ شراء بـ 50 نجمة", 'premium_success': "🎉 أنت بريميوم!", 'ai_limit_reached': "⚠️ الحد (5/يوم). اشتري بريميوم.", 'btn_go_premium': "💎 اشتري", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ ملف", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 نقاط:", 'admin_points_wait': "⏳ جاري الإرسال...", 'admin_points_done': "✅ أضيفت {points}!\n📩 المرسل: {success}\n❌ الفشل: {fail}", 'admin_file_wait': "📂 أرسل ملفاً:", 'admin_file_title': "✍️ اسم الملف:", 'admin_file_saved': "✅ تم الحفظ!", 'admin_file_cancel': "❌ ملغي.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ خطأ! الفيديو غير موجود.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ غداً!", 'top_text': "🏆 **أفضل 10:**\n{list}", 'quiz_start': "🧠 **اختبار!** +10 نقاط.\n\n❓ *سؤال:*", 'quiz_correct': "✅ **صحيح!** (+10)", 'quiz_wrong': "❌ **خطأ!** الجواب: **{answer}**", 'quiz_end': "🎉 أجبت على جميع الأسئلة! نبدأ من جديد.", 'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ المتبقي: {limit}"}
@@ -378,7 +393,7 @@ def get_admin_keyboard(lang):
 def get_sub_keyboard(lang):
     t = TEXTS[lang]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t['btn_join'], url=f"https://t.me/{FORCE_SUB_CHANNEL.replace('@', '')}")], # Majburiy obuna kanali
+        [InlineKeyboardButton(t['btn_join'], url=f"https://t.me/{FORCE_SUB_CHANNEL.replace('@', '')}")],
         [InlineKeyboardButton(t['btn_check'], callback_data="check_sub")]
     ])
 
@@ -497,7 +512,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton(f"{lock}{f['title']}", callback_data=f"get_file_{f['id']}")])
         keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
         
-        await query.edit_message_text(t['files_menu'], reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await edit_or_send(query, context, t['files_menu'], InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("get_file_"):
         file_id = int(data.replace("get_file_", ""))
@@ -521,7 +536,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id, text=f"❌ Xatolik: Faylni yuborib bo'lmadi.")
 
     elif data == "premium_menu":
-        await query.edit_message_text(t['premium_menu'], reply_markup=get_premium_keyboard(lang), parse_mode='Markdown')
+        await edit_or_send(query, context, t['premium_menu'], get_premium_keyboard(lang))
 
     elif data == "buy_premium":
         title = "Premium Obuna (1 oy)"
@@ -546,13 +561,13 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ To'lov tizimida xatolik! Iltimos BotFather orqali Stars to'lovini yoqing.", show_alert=True)
 
     elif data == "script_menu":
-        await query.edit_message_text(t['script_cat_menu'], reply_markup=get_script_categories_keyboard(lang), parse_mode='Markdown')
+        await edit_or_send(query, context, t['script_cat_menu'], get_script_categories_keyboard(lang))
     elif data.startswith("script_cat_"):
         cat_key = data.replace("script_cat_", "")
         if 'selected_scripts' not in context.user_data: context.user_data['selected_scripts'] = []
         cat_name = SCRIPTS_DATA[cat_key]['name']
         text = t['script_items_menu'].format(cat_name=cat_name)
-        await query.edit_message_text(text, reply_markup=get_script_items_keyboard(cat_key, lang, context.user_data['selected_scripts']), parse_mode='Markdown')
+        await edit_or_send(query, context, text, get_script_items_keyboard(cat_key, lang, context.user_data['selected_scripts']))
     elif data.startswith("script_toggle_"):
         parts = data.replace("script_toggle_", "").split("_", 1)
         cat_key, item_key = parts[0], parts[1]
@@ -563,11 +578,12 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['selected_scripts'] = selected
         cat_name = SCRIPTS_DATA[cat_key]['name']
         text = t['script_items_menu'].format(cat_name=cat_name)
-        await query.edit_message_reply_markup(reply_markup=get_script_items_keyboard(cat_key, lang, selected))
+        try: await query.edit_message_reply_markup(reply_markup=get_script_items_keyboard(cat_key, lang, selected))
+        except: await edit_or_send(query, context, text, get_script_items_keyboard(cat_key, lang, selected))
     elif data == "script_clear":
         context.user_data['selected_scripts'] = []
         await query.answer("🗑 Barcha tanlovlar tozalandi!")
-        await query.edit_message_text(t['script_cat_menu'], reply_markup=get_script_categories_keyboard(lang), parse_mode='Markdown')
+        await edit_or_send(query, context, t['script_cat_menu'], get_script_categories_keyboard(lang))
     elif data == "script_generate":
         selected = context.user_data.get('selected_scripts', [])
         if not selected: return await query.answer(t['script_empty'], show_alert=True)
@@ -606,22 +622,22 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prem_users = await conn.fetchval('SELECT COUNT(*) FROM users WHERE is_premium = TRUE')
             top_score = await conn.fetchval('SELECT MAX(score) FROM users')
         text = f"📊 **Statistika**\n\n👥 Jami: {total} ta\n💎 Premium: {prem_users} ta\n🏆 Eng yuqori: {top_score}"
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
+        await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_points":
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_admin_points'
-        await query.edit_message_text(t['admin_points_prompt'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
+        await edit_or_send(query, context, t['admin_points_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_bcast":
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_broadcast'
-        await query.edit_message_text(t['admin_bcast_start'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
+        await edit_or_send(query, context, t['admin_bcast_start'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_add_file":
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_add_file'
-        await query.edit_message_text(t['admin_file_wait'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]), parse_mode='Markdown')
+        await edit_or_send(query, context, t['admin_file_wait'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_menu":
         if user_id != ADMIN_ID: return
-        await query.edit_message_text(t['admin_panel'], reply_markup=get_admin_keyboard(lang), parse_mode='Markdown')
+        await edit_or_send(query, context, t['admin_panel'], get_admin_keyboard(lang))
     elif data == "admin_close":
         if user_id != ADMIN_ID: return
         await query.message.delete()
@@ -630,17 +646,17 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = data.split("_")[1]
         context.user_data['lang'] = lang
         await add_user(user_id, lang)
-        await query.edit_message_text(TEXTS[lang]['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
+        await edit_or_send(query, context, TEXTS[lang]['welcome'], get_main_menu(lang))
     elif data == "change_lang":
         context.user_data.pop('lang', None)
-        await query.edit_message_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+        await edit_or_send(query, context, TEXTS['uz']['choose_lang'], get_lang_keyboard())
     elif data == "my_profile":
         profile = await get_user_profile(user_id)
         if not profile: return await query.answer("Xatolik: /start bosing.")
         level = get_level(profile['score'])
         status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
         text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
-        await query.edit_message_text(text, reply_markup=get_profile_keyboard(lang), parse_mode='Markdown')
+        await edit_or_send(query, context, text, get_profile_keyboard(lang))
     elif data == "daily_bonus":
         success = await claim_daily_bonus(user_id)
         if success:
@@ -649,7 +665,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             level = get_level(profile['score'])
             status = "💎 Premium" if profile['is_premium'] else "🆓 Bepul"
             text = t['profile_text'].format(score=profile['score'], level=level, rank=profile['rank'], status=status)
-            await query.edit_message_text(text, reply_markup=get_profile_keyboard(lang), parse_mode='Markdown')
+            await edit_or_send(query, context, text, get_profile_keyboard(lang))
         else:
             await query.answer(t['bonus_wait'], show_alert=True)
     elif data == "top_users":
@@ -659,7 +675,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
             top_list += f"{medal} {i+1}. ID: `{u['user_id']}` — **{u['score']}** ball\n"
         if not top_list: top_list = "Hozircha bo'sh."
-        await query.edit_message_text(t['top_text'].format(list=top_list), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]), parse_mode='Markdown')
+        await edit_or_send(query, context, t['top_text'].format(list=top_list), InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
 
     elif data == "quiz_start":
         if 'seen_questions' not in context.user_data:
@@ -677,10 +693,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         question_data = QUIZ_DATA[chosen_idx]
         text = t['quiz_start'] + f"\n\n❓ **{question_data['q'][lang]}**"
-        keyboard = get_quiz_keyboard(question_data['options'], question_data['answer'], lang)
-        
-        try: await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
-        except: await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode='Markdown')
+        await edit_or_send(query, context, text, get_quiz_keyboard(question_data['options'], question_data['answer'], lang))
 
     elif data.startswith("quiz_ans_"):
         selected_ans = data.replace("quiz_ans_", "")
@@ -697,39 +710,32 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = t['quiz_wrong'].format(answer=correct_ans)
             
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_next_quiz'], callback_data="quiz_start")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
-        try: await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, text, keyboard)
 
     elif data == "ai_start":
         can_use, limit_left = await check_ai_limit(user_id)
         if not can_use:
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_go_premium'], callback_data="premium_menu")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
-            return await query.edit_message_text(t['ai_limit_reached'], reply_markup=keyboard, parse_mode='Markdown')
+            return await edit_or_send(query, context, t['ai_limit_reached'], keyboard)
             
         context.user_data['state'] = 'in_ai'
         prompt_text = t['ai_prompt']
         if limit_left < 999:
             prompt_text += "\n\n" + t['ai_limit_info'].format(limit=limit_left)
-        await query.edit_message_text(prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]), parse_mode='Markdown')
+        await edit_or_send(query, context, prompt_text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
     elif data == "sec_start":
-        try: await query.edit_message_text(text=t['sec_menu'], reply_markup=get_sec_menu(lang), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['sec_menu'], get_sec_menu(lang))
     elif data == "sec_cat_info": 
-        try: await query.edit_message_text(text=t['sec_info_text'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['sec_info_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
     elif data == "sec_cat_pass": 
-        try: await query.edit_message_text(text=t['sec_pass_text'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['sec_pass_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
     elif data == "sec_cat_exploit": 
-        try: await query.edit_message_text(text=t['sec_exploit_text'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['sec_exploit_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
     elif data == "sec_cat_network": 
-        try: await query.edit_message_text(text=t['sec_network_text'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['sec_network_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
     elif data == "support_start":
         context.user_data['state'] = 'in_support'
-        try: await query.edit_message_text(text=t['support_prompt'], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['support_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
     elif data == "send_apk":
         msg = await context.bot.send_message(chat_id=chat_id, text=t['apk_loading'])
         await query.message.delete()
@@ -749,32 +755,25 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "daily_tip":
         random_tip = random.choice(TIPS)[lang]
         text = t['tip_header'] + random_tip
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
-        try: await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
     elif data == "cheatsheet":
-        try: await query.edit_message_text(text=t['cheatsheet_menu'], reply_markup=get_cheatsheet_keyboard(lang), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['cheatsheet_menu'], get_cheatsheet_keyboard(lang))
     elif data.startswith("cat_"):
         category = data.split("_")[1]
         commands = COMMANDS_DATA.get(category, [])
         text = f"**{t['cat_'+category]}**\n\n"
         for cmd, desc in commands: text += f"• `{cmd}` - {desc[lang]}\n"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="cheatsheet")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
-        try: await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="cheatsheet")], [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
     elif data.startswith("page_"):
         page = int(data.split("_")[1])
         text = t['text_page'].format(page=page)
-        try: await query.edit_message_text(text=text, reply_markup=get_lessons_keyboard(page, lang), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, text, get_lessons_keyboard(page, lang))
         
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         message_id = LESSONS.get(lesson_num, lesson_num + 2)
         video_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_lessons_menu'], callback_data="page_1")]])
         try:
-            # VIDEO CHANNEL DAN NUSXALASH
             await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=video_keyboard)
             await query.message.delete()
         except TelegramError as e:
@@ -782,8 +781,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
             
     elif data == "lua_page_1":
-        try: await query.edit_message_text(text=t['text_lua'], reply_markup=get_lua_lessons_keyboard(lang), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['text_lua'], get_lua_lessons_keyboard(lang))
     elif data.startswith("lua_lesson_"):
         lesson_num = int(data.split("_")[2])
         message_id = LUA_LESSONS.get(lesson_num, 93)
@@ -792,7 +790,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([InlineKeyboardButton(t['btn_lessons_menu'], callback_data="lua_page_1")])
         video_keyboard = InlineKeyboardMarkup(buttons)
         try:
-            # VIDEO CHANNEL DAN NUSXALASH
             await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=video_keyboard)
             await query.message.delete()
         except TelegramError as e: 
@@ -801,7 +798,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "python_extra":
         try:
             for v_id in PYTHON_EXTRA_VIDEOS: 
-                # VIDEO CHANNEL DAN NUSXALASH
                 await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=v_id)
             back_kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="lua_page_1")]])
             await context.bot.send_message(chat_id=chat_id, text=t['text_python_done'], reply_markup=back_kb)
@@ -810,8 +806,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
     elif data == "back_to_start":
         context.user_data['state'] = None
-        try: await query.edit_message_text(text=t['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
-        except: pass
+        await edit_or_send(query, context, t['welcome'], get_main_menu(lang))
 
 # ==========================================
 # PRE-CHECKOUT VA TO'LOVNI QABUL QILISH
