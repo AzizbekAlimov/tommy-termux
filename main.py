@@ -91,199 +91,37 @@ TEXTS = {
         'quiz_wrong': "❌ **Xato javob!**\n\nTo'g'ri javob: **{answer}**",
         'btn_next_quiz': "➡️ Keyingi savol"
     },
-    'ru': {
-        'choose_lang': "👋 **Здравствуйте!**\n\nПожалуйста, выберите удобный для вас язык:",
-        'welcome': "👋 **Здравствуйте!**\n\nЯ помощник по **Termux и программированию**.",
-        'btn_termux': "📽️ ВИДЕОУРОКИ TERMUX",
-        'btn_lua': "📽️ ВИДЕОУРОКИ TERMUX LUA",
-        'btn_apk': "📥 СКАЧАТЬ TERMUX APK",
-        'btn_tip': "💡 Совет дня",
-        'btn_cheatsheet': "📜 Важные команды",
-        'btn_quiz': "🧠 Проверь себя (Тест)",
-        'btn_support': "✉️ Написать админу",
-        'btn_another_tip': "🔄 Ещё совет",
-        'btn_change_lang': "🌐 Изменить язык",
-        'btn_back': "🔙 Главное меню",
-        'btn_prev': "⬅️ Предыдущий",
-        'btn_next': "Следующий ➡️",
-        'btn_python': "🐍 ПОЛУЧИТЬ PYTHON",
-        'btn_lessons_menu': "📚 Уроки (Меню)",
-        'text_page': "📚 **Видеоуроки**\n\nСтраница: {page} / 5\nВыберите нужный урок:",
-        'text_lua': "📚 **УРОКИ TERMUX LUA**\n\nВыберите нужный урок:",
-        'text_python_done': "Вот запрошенный вами урок Python! ✅",
-        'text_error_vid': "❌ **Ошибка!** Не удалось загрузить видео.",
-        'text_error_py': "❌ **Ошибка!** Не удалось загрузить видео Python.",
-        'tip_header': "💡 **Совет дня:**\n\n",
-        'cheatsheet_menu': "📜 **Важные команды**\n\nВыберите нужный раздел:",
-        'cat_files': "📁 Работа с файлами",
-        'cat_packages': "📦 Пакеты и программы",
-        'cat_network': "🌐 Сеть и интернет",
-        'cat_system': "⚙️ Система и другое",
-        'btn_back_cheat': "🔙 Назад",
-        'apk_caption': "📱 **Приложение Termux (APK)**\n\nВот официальная версия Termux! \n\n1. Скачайте файл.\n2. Установите на свой телефон.\n3. Начинайте уроки! 🚀",
-        'apk_file_name': "Termux_Prilozhenie.apk",
-        'apk_loading': "⏳ Пожалуйста, подождите, Termux APK загружается...",
-        'apk_too_big': "⚠️ **Внимание!**\n\nРазмер файла превышает лимит Telegram. Скачайте по ссылке:\n\n👇 [Скачать Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **Ошибка!** Не удалось загрузить APK файл.",
-        'support_prompt': "✉️ **Написать админу**\n\nПожалуйста, напишите свой вопрос или проблему одним сообщением. Мы скоро ответим.",
-        'support_sent': "✅ **Ваше сообщение отправлено!**\n\nАдмин свяжется с вами в ближайшее время.",
-        'support_reply': "📬 **Ответ админа:**\n\n",
-        'quiz_start': "🧠 **Проверьте свои знания!**\n\nВыберите правильный ответ на следующий вопрос:",
-        'quiz_correct': "✅ **Правильный ответ! Молодец!** 🎉",
-        'quiz_wrong': "❌ **Неправильный ответ!**\n\nПравильный ответ: **{answer}**",
-        'btn_next_quiz': "➡️ Следующий вопрос"
-    },
-    'en': {
-        'choose_lang': "👋 **Hello!**\n\nPlease select a convenient language for you:",
-        'welcome': "👋 **Hello!**\n\nI am an assistant bot for **Termux and Programming**.",
-        'btn_termux': "📽️ TERMUX VIDEO LESSONS",
-        'btn_lua': "📽️ TERMUX LUA VIDEO LESSONS",
-        'btn_apk': "📥 DOWNLOAD TERMUX APK",
-        'btn_tip': "💡 Daily Tip",
-        'btn_cheatsheet': "📜 Important commands",
-        'btn_quiz': "🧠 Test your knowledge",
-        'btn_support': "✉️ Contact Admin",
-        'btn_another_tip': "🔄 Another Tip",
-        'btn_change_lang': "🌐 Change language",
-        'btn_back': "🔙 Main menu",
-        'btn_prev': "⬅️ Previous",
-        'btn_next': "Next ➡️",
-        'btn_python': "🐍 GET PYTHON",
-        'btn_lessons_menu': "📚 Lessons (Menu)",
-        'text_page': "📚 **Video lessons**\n\nPage: {page} / 5\nSelect the lesson you need:",
-        'text_lua': "📚 **TERMUX LUA LESSONS**\n\nSelect the lesson you need:",
-        'text_python_done': "Here is the Python lesson you requested! ✅",
-        'text_error_vid': "❌ **Error!** Could not load video.",
-        'text_error_py': "❌ **Error!** Could not load Python video.",
-        'tip_header': "💡 **Daily Tip:**\n\n",
-        'cheatsheet_menu': "📜 **Important commands**\n\nSelect the desired category:",
-        'cat_files': "📁 File Management",
-        'cat_packages': "📦 Packages & Programs",
-        'cat_network': "🌐 Network & Internet",
-        'cat_system': "⚙️ System & Other",
-        'btn_back_cheat': "🔙 Back",
-        'apk_caption': "📱 **Termux Application (APK)**\n\nHere is the official version of Termux! \n\n1. Download the file.\n2. Install it on your phone.\n3. Start our lessons! 🚀",
-        'apk_file_name': "Termux_App.apk",
-        'apk_loading': "⏳ Please wait, Termux APK is downloading...",
-        'apk_too_big': "⚠️ **Attention!**\n\nThe file size exceeds the Telegram limit. Please download via the direct link:\n\n👇 [Download Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **Error!** Could not download the APK file.",
-        'support_prompt': "✉️ **Contact Admin**\n\nPlease write your question or problem in one message. We will reply soon.",
-        'support_sent': "✅ **Your message has been sent!**\n\nThe admin will contact you shortly.",
-        'support_reply': "📬 **Admin reply:**\n\n",
-        'quiz_start': "🧠 **Test your knowledge!**\n\nChoose the correct answer to the following question:",
-        'quiz_correct': "✅ **Correct answer! Well done!** 🎉",
-        'quiz_wrong': "❌ **Wrong answer!**\n\nThe correct answer is: **{answer}**",
-        'btn_next_quiz': "➡️ Next question"
-    },
-    'ar': {
-        'choose_lang': "👋 **مرحباً!**\n\nالرجاء اختيار اللغة المناسبة لك:",
-        'welcome': "👋 **مرحباً!**\n\nأنا مساعد في **Termux والبرمجة**.",
-        'btn_termux': "📽️ دروس فيديو TERMUX",
-        'btn_lua': "📽️ دروس فيديو TERMUX LUA",
-        'btn_apk': "📥 تحميل TERMUX APK",
-        'btn_tip': "💡 نصيحة اليوم",
-        'btn_cheatsheet': "📜 أوامر مهمة",
-        'btn_quiz': "🧠 اختبر معلوماتك",
-        'btn_support': "✉️ التواصل مع المسؤول",
-        'btn_another_tip': "🔄 نصيحة أخرى",
-        'btn_change_lang': "🌐 تغيير اللغة",
-        'btn_back': "🔙 القائمة الرئيسية",
-        'btn_prev': "⬅️ السابق",
-        'btn_next': "التالي ➡️",
-        'btn_python': "🐍 الحصول على PYTHON",
-        'btn_lessons_menu': "📚 الدروس (القائمة)",
-        'text_page': "📚 **دروس الفيديو**\n\nالصفحة: {page} / 5\nاختر الدرس الذي تحتاجه:",
-        'text_lua': "📚 **دروس TERMUX LUA**\n\nاختر الدرس الذي تحتاجه:",
-        'text_python_done': "هذا درس Python الذي طلبته! ✅",
-        'text_error_vid': "❌ **خطأ!** تعذر تحميل الفيديو.",
-        'text_error_py': "❌ **خطأ!** تعذر تحميل فيديو Python.",
-        'tip_header': "💡 **نصيحة اليوم:**\n\n",
-        'cheatsheet_menu': "📜 **أوامر مهمة**\n\nاختر الفئة المطلوبة:",
-        'cat_files': "📁 إدارة الملفات",
-        'cat_packages': "📦 الحزم والبرامج",
-        'cat_network': "🌐 الشبكة والإنترنت",
-        'cat_system': "⚙️ النظام وأخرى",
-        'btn_back_cheat': "🔙 رجوع",
-        'apk_caption': "📱 **تطبيق Termux (APK)**\n\nهذه هي النسخة الرسمية من Termux! \n\n1. قم بتنزيل الملف.\n2. ثبته على هاتفك.\n3. ابدأ دروسنا! 🚀",
-        'apk_file_name': "Termux_App.apk",
-        'apk_loading': "⏳ يرجى الانتظار، يتم تنزيل Termux APK...",
-        'apk_too_big': "⚠️ **انتباه!**\n\nحجم الملف يتجاوز حد Telegram. يرجى تنزيل عبر الرابط المباشر:\n\n👇 [تنزيل Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **خطأ!** تعذر تنزيل ملف APK.",
-        'support_prompt': "✉️ **التواصل مع المسؤول**\n\nيرجى كتابة سؤالك أو مشكلتك في رسالة واحدة. سنرد قريبا.",
-        'support_sent': "✅ **تم إرسال رسالتك!**\n\nسيتصل بك المسؤول قريبا.",
-        'support_reply': "📬 **رد المسؤول:**\n\n",
-        'quiz_start': "🧠 **اختبر معلوماتك!**\n\nاختر الإجابة الصحيحة للسؤال التالي:",
-        'quiz_correct': "✅ **إجابة صحيحة! أحسنت!** 🎉",
-        'quiz_wrong': "❌ **إجابة خاطئة!**\n\nالإجابة الصحيحة هي: **{answer}**",
-        'btn_next_quiz': "➡️ السؤال التالي"
-    }
+    # ... (Boshqa tillar avvalgidek qoladi, kodni qisqartirish uchun faqat UZ ni ko'rsatdim, lekin to'liq kodda hammasi bor)
+    'ru': {'choose_lang': "👋 **Здравствуйте!**\n\nПожалуйста, выберите удобный для вас язык:", 'welcome': "👋 **Здравствуйте!**\n\nЯ помощник по **Termux и программированию**.", 'btn_termux': "📽️ ВИДЕОУРОКИ TERMUX", 'btn_lua': "📽️ ВИДЕОУРОКИ TERMUX LUA", 'btn_apk': "📥 СКАЧАТЬ TERMUX APK", 'btn_tip': "💡 Совет дня", 'btn_cheatsheet': "📜 Важные команды", 'btn_quiz': "🧠 Проверь себя (Тест)", 'btn_support': "✉️ Написать админу", 'btn_another_tip': "🔄 Ещё совет", 'btn_change_lang': "🌐 Изменить язык", 'btn_back': "🔙 Главное меню", 'btn_prev': "⬅️ Предыдущий", 'btn_next': "Следующий ➡️", 'btn_python': "🐍 ПОЛУЧИТЬ PYTHON", 'btn_lessons_menu': "📚 Уроки (Меню)", 'text_page': "📚 **Видеоуроки**\n\nСтраница: {page} / 5\nВыберите нужный урок:", 'text_lua': "📚 **УРОКИ TERMUX LUA**\n\nВыберите нужный урок:", 'text_python_done': "Вот запрошенный вами урок Python! ✅", 'text_error_vid': "❌ **Ошибка!** Не удалось загрузить видео.", 'text_error_py': "❌ **Ошибка!** Не удалось загрузить видео Python.", 'tip_header': "💡 **Совет дня:**\n\n", 'cheatsheet_menu': "📜 **Важные команды**\n\nВыберите нужный раздел:", 'cat_files': "📁 Работа с файлами", 'cat_packages': "📦 Пакеты и программы", 'cat_network': "🌐 Сеть и интернет", 'cat_system': "⚙️ Система и другое", 'btn_back_cheat': "🔙 Назад", 'apk_caption': "📱 **Приложение Termux (APK)**\n\nВот официальная версия Termux! \n\n1. Скачайте файл.\n2. Установите на свой телефон.\n3. Начинайте уроки! 🚀", 'apk_file_name': "Termux_Prilozhenie.apk", 'apk_loading': "⏳ Пожалуйста, подождите, Termux APK загружается...", 'apk_too_big': "⚠️ **Внимание!**\n\nРазмер файла превышает лимит Telegram. Скачайте по ссылке:\n\n👇 [Скачать Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)", 'apk_error': "❌ **Ошибка!** Не удалось загрузить APK файл.", 'support_prompt': "✉️ **Написать админу**\n\nПожалуйста, напишите свой вопрос или проблему одним сообщением. Мы скоро ответим.", 'support_sent': "✅ **Ваше сообщение отправлено!**\n\nАдмин свяжется с вами в ближайшее время.", 'support_reply': "📬 **Ответ админа:**\n\n", 'quiz_start': "🧠 **Проверьте свои знания!**\n\nВыберите правильный ответ на следующий вопрос:", 'quiz_correct': "✅ **Правильный ответ! Молодец!** 🎉", 'quiz_wrong': "❌ **Неправильный ответ!**\n\nПравильный ответ: **{answer}**", 'btn_next_quiz': "➡️ Следующий вопрос"},
+    'en': {'choose_lang': "👋 **Hello!**\n\nPlease select a convenient language for you:", 'welcome': "👋 **Hello!**\n\nI am an assistant bot for **Termux and Programming**.", 'btn_termux': "📽️ TERMUX VIDEO LESSONS", 'btn_lua': "📽️ TERMUX LUA VIDEO LESSONS", 'btn_apk': "📥 DOWNLOAD TERMUX APK", 'btn_tip': "💡 Daily Tip", 'btn_cheatsheet': "📜 Important commands", 'btn_quiz': "🧠 Test your knowledge", 'btn_support': "✉️ Contact Admin", 'btn_another_tip': "🔄 Another Tip", 'btn_change_lang': "🌐 Change language", 'btn_back': "🔙 Main menu", 'btn_prev': "⬅️ Previous", 'btn_next': "Next ➡️", 'btn_python': "🐍 GET PYTHON", 'btn_lessons_menu': "📚 Lessons (Menu)", 'text_page': "📚 **Video lessons**\n\nPage: {page} / 5\nSelect the lesson you need:", 'text_lua': "📚 **TERMUX LUA LESSONS**\n\nSelect the lesson you need:", 'text_python_done': "Here is the Python lesson you requested! ✅", 'text_error_vid': "❌ **Error!** Could not load video.", 'text_error_py': "❌ **Error!** Could not load Python video.", 'tip_header': "💡 **Daily Tip:**\n\n", 'cheatsheet_menu': "📜 **Important commands**\n\nSelect the desired category:", 'cat_files': "📁 File Management", 'cat_packages': "📦 Packages & Programs", 'cat_network': "🌐 Network & Internet", 'cat_system': "⚙️ System & Other", 'btn_back_cheat': "🔙 Back", 'apk_caption': "📱 **Termux Application (APK)**\n\nHere is the official version of Termux! \n\n1. Download the file.\n2. Install it on your phone.\n3. Start our lessons! 🚀", 'apk_file_name': "Termux_App.apk", 'apk_loading': "⏳ Please wait, Termux APK is downloading...", 'apk_too_big': "⚠️ **Attention!**\n\nThe file size exceeds the Telegram limit. Please download via the direct link:\n\n👇 [Download Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)", 'apk_error': "❌ **Error!** Could not download the APK file.", 'support_prompt': "✉️ **Contact Admin**\n\nPlease write your question or problem in one message. We will reply soon.", 'support_sent': "✅ **Your message has been sent!**\n\nThe admin will contact you shortly.", 'support_reply': "📬 **Admin reply:**\n\n", 'quiz_start': "🧠 **Test your knowledge!**\n\nChoose the correct answer to the following question:", 'quiz_correct': "✅ **Correct answer! Well done!** 🎉", 'quiz_wrong': "❌ **Wrong answer!**\n\nThe correct answer is: **{answer}**", 'btn_next_quiz': "➡️ Next question"},
+    'ar': {'choose_lang': "👋 **مرحباً!**\n\nالرجاء اختيار اللغة المناسبة لك:", 'welcome': "👋 **مرحباً!**\n\nأنا مساعد في **Termux والبرمجة**.", 'btn_termux': "📽️ دروس فيديو TERMUX", 'btn_lua': "📽️ دروس فيديو TERMUX LUA", 'btn_apk': "📥 تحميل TERMUX APK", 'btn_tip': "💡 نصيحة اليوم", 'btn_cheatsheet': "📜 أوامر مهمة", 'btn_quiz': "🧠 اختبر معلوماتك", 'btn_support': "✉️ التواصل مع المسؤول", 'btn_another_tip': "🔄 نصيحة أخرى", 'btn_change_lang': "🌐 تغيير اللغة", 'btn_back': "🔙 القائمة الرئيسية", 'btn_prev': "⬅️ السابق", 'btn_next': "التالي ➡️", 'btn_python': "🐍 الحصول على PYTHON", 'btn_lessons_menu': "📚 الدروس (القائمة)", 'text_page': "📚 **دروس الفيديو**\n\nالصفحة: {page} / 5\nاختر الدرس الذي تحتاجه:", 'text_lua': "📚 **دروس TERMUX LUA**\n\nاختر الدرس الذي تحتاجه:", 'text_python_done': "هذا درس Python الذي طلبته! ✅", 'text_error_vid': "❌ **خطأ!** تعذر تحميل الفيديو.", 'text_error_py': "❌ **خطأ!** تعذر تحميل فيديو Python.", 'tip_header': "💡 **نصيحة اليوم:**\n\n", 'cheatsheet_menu': "📜 **أوامر مهمة**\n\nاختر الفئة المطلوبة:", 'cat_files': "📁 إدارة الملفات", 'cat_packages': "📦 الحزم والبرامج", 'cat_network': "🌐 الشبكة والإنترنت", 'cat_system': "⚙️ النظام وأخرى", 'btn_back_cheat': "🔙 رجوع", 'apk_caption': "📱 **تطبيق Termux (APK)**\n\nهذه هي النسخة الرسمية من Termux! \n\n1. قم بتنزيل الملف.\n2. ثبته على هاتفك.\n3. ابدأ دروسنا! 🚀", 'apk_file_name': "Termux_App.apk", 'apk_loading': "⏳ يرجى الانتظار، يتم تنزيل Termux APK...", 'apk_too_big': "⚠️ **انتباه!**\n\nحجم الملف يتجاوز حد Telegram. يرجى تنزيل عبر الرابط المباشر:\n\n👇 [تنزيل Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)", 'apk_error': "❌ **خطأ!** تعذر تنزيل ملف APK.", 'support_prompt': "✉️ **التواصل مع المسؤول**\n\nيرجى كتابة سؤالك أو مشكلتك في رسالة واحدة. سنرد قريبا.", 'support_sent': "✅ **تم إرسال رسالتك!**\n\nسيتصل بك المسؤول قريبا.", 'support_reply': "📬 **رد المسؤول:**\n\n", 'quiz_start': "🧠 **اختبر معلوماتك!**\n\nاختر الإجابة الصحيحة للسؤال التالي:", 'quiz_correct': "✅ **إجابة صحيحة! أحسنت!** 🎉", 'quiz_wrong': "❌ **إجابة خاطئة!**\n\nالإجابة الصحيحة هي: **{answer}**", 'btn_next_quiz': "➡️ السؤال التالي"}
 }
 
-# ==========================================
-# KUNLIK MASLAHATLAR VA BUYRUQLAR
-# ==========================================
 TIPS = [
     {'uz': "**Tezroq kod yozish:**\n`nano` o'rniga `micro` matn muharririni ishlatib ko'ring. U yanada qulay va sichqonchani qo'llab-quvvatlaydi.\nO'rnatish: `pkg install micro`", 'ru': "**Быстрое написание кода:**\nПопробуйте использовать текстовый редактор `micro` вместо `nano`. Он более удобен и поддерживает мышь.\nУстановка: `pkg install micro`", 'en': "**Faster coding:**\nTry using the `micro` text editor instead of `nano`. It is more convenient and supports mouse.\nInstall: `pkg install micro`", 'ar': "**برمجة أسرع:**\nجرب استخدام محرر النصوص `micro` بدلاً من `nano`. إنه أكثر ملاءمة ويدعم الماوس.\nالتثبيت: `pkg install micro`"},
     {'uz': "**Termuxni chiroyli qilish:**\nTermuxga kirganda chiqadigan zerikarli yozuvni o'zgartirish mumkin.\nO'rnatish: `pkg install figlet`\nKeyin: `figlet Salom` deb yozing.", 'ru': "**Сделайте Termux красивым:**\nСкучный текст, появляющийся при входе в Termux, можно изменить.\nУстановка: `pkg install figlet`\nЗатем напишите: `figlet Hello`", 'en': "**Make Termux beautiful:**\nYou can change the boring text that appears when you enter Termux.\nInstall: `pkg install figlet`\nThen type: `figlet Hello`", 'ar': "**اجعل Termux جميلاً:**\nيمكنك تغيير النص الممل الذي يظهر عند دخولك إلى Termux.\nالتثبيت: `pkg install figlet`\nثم اكتب: `figlet Hello`"}
 ]
 
 COMMANDS_DATA = {
-    'files': [
-        ('ls', {'uz': 'Fayllar ro\'yxati', 'ru': 'Список файлов', 'en': 'List files', 'ar': 'قائمة الملفات'}),
-        ('cd papka', {'uz': 'Papkaga kirish', 'ru': 'Войти в папку', 'en': 'Enter folder', 'ar': 'الدخول إلى مجلد'}),
-        ('mkdir name', {'uz': 'Papka yaratish', 'ru': 'Создать папку', 'en': 'Create folder', 'ar': 'إنشاء مجلد'}),
-    ],
-    'packages': [
-        ('pkg update', {'uz': 'Yangilanishlarni tekshirish', 'ru': 'Проверить обновления', 'en': 'Check updates', 'ar': 'التحقق من التحديثات'}),
-        ('pkg install nom', {'uz': 'Dastur o\'rnatish', 'ru': 'Установить программу', 'en': 'Install package', 'ar': 'تثبيت حزمة'}),
-    ],
-    'network': [
-        ('ping google.com', {'uz': 'Internetni tekshirish', 'ru': 'Проверить интернет', 'en': 'Check internet', 'ar': 'فحص الإنترنت'}),
-    ],
-    'system': [
-        ('clear', {'uz': 'Ekranni tozalash', 'ru': 'Очистить экран', 'en': 'Clear screen', 'ar': 'مسح الشاشة'}),
-    ]
+    'files': [('ls', {'uz': 'Fayllar ro\'yxati', 'ru': 'Список файлов', 'en': 'List files', 'ar': 'قائمة الملفات'}), ('cd papka', {'uz': 'Papkaga kirish', 'ru': 'Войти в папку', 'en': 'Enter folder', 'ar': 'الدخول إلى مجلد'}), ('mkdir name', {'uz': 'Papka yaratish', 'ru': 'Создать папку', 'en': 'Create folder', 'ar': 'إنشاء مجلد'})],
+    'packages': [('pkg update', {'uz': 'Yangilanishlarni tekshirish', 'ru': 'Проверить обновления', 'en': 'Check updates', 'ar': 'التحقق من التحديثات'}), ('pkg install nom', {'uz': 'Dastur o\'rnatish', 'ru': 'Установить программу', 'en': 'Install package', 'ar': 'تثبيت حزمة'})],
+    'network': [('ping google.com', {'uz': 'Internetni tekshirish', 'ru': 'Проверить интернет', 'en': 'Check internet', 'ar': 'فحص الإنترنت'})],
+    'system': [('clear', {'uz': 'Ekranni tozalash', 'ru': 'Очистить экран', 'en': 'Clear screen', 'ar': 'مسح الشاشة'})]
 }
 
-# ==========================================
-# TEST (QUIZ) SAVOLLARI BAZASI
-# ==========================================
 QUIZ_DATA = [
-    {
-        'q': {'uz': "Linux'da papka yaratish buyrug'i qaysi?", 'ru': "Какая команда создает папку в Linux?", 'en': "Which command creates a folder in Linux?", 'ar': "ما هو الأمر الذي ينشئ مجلدًا في Linux؟"},
-        'options': ['mkdir', 'cd', 'ls', 'rm'],
-        'answer': 'mkdir'
-    },
-    {
-        'q': {'uz': "Termux'da paketlarni o'rnatish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда используется для установки пакетов в Termux?", 'en': "Which command is used to install packages in Termux?", 'ar': "ما هو الأمر المستخدم لتثبيت الحزم في Termux؟"},
-        'options': ['pkg install', 'apt-get', 'pip install', 'install'],
-        'answer': 'pkg install'
-    },
-    {
-        'q': {'uz': "Ekranni tozalash uchun qaysi buyruq beriladi?", 'ru': "Какая команда очищает экран?", 'en': "Which command clears the screen?", 'ar': "ما هو الأمر الذي يمسح الشاشة؟"},
-        'options': ['clear', 'cls', 'clean', 'wipe'],
-        'answer': 'clear'
-    },
-    {
-        'q': {'uz': "Python'da matn chiqarish uchun nima ishlatiladi?", 'ru': "Что используется для вывода текста в Python?", 'en': "What is used to print text in Python?", 'ar': "ماذا يستخدم لطباعة النص في Python؟"},
-        'options': ['print()', 'echo()', 'display()', 'output()'],
-        'answer': 'print()'
-    },
-    {
-        'q': {'uz': "Faylni o'chirish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда удаляет файл?", 'en': "Which command deletes a file?", 'ar': "ما هو الأمر الذي يحذف ملفًا؟"},
-        'options': ['rm', 'del', 'delete', 'erase'],
-        'answer': 'rm'
-    }
+    {'q': {'uz': "Linux'da papka yaratish buyrug'i qaysi?", 'ru': "Какая команда создает папку в Linux?", 'en': "Which command creates a folder in Linux?", 'ar': "ما هو الأمر الذي ينشئ مجلدًا في Linux؟"}, 'options': ['mkdir', 'cd', 'ls', 'rm'], 'answer': 'mkdir'},
+    {'q': {'uz': "Termux'da paketlarni o'rnatish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда используется для установки пакетов в Termux?", 'en': "Which command is used to install packages in Termux?", 'ar': "ما هو الأمر المستخدم لتثبيت الحزم في Termux؟"}, 'options': ['pkg install', 'apt-get', 'pip install', 'install'], 'answer': 'pkg install'},
+    {'q': {'uz': "Ekranni tozalash uchun qaysi buyruq beriladi?", 'ru': "Какая команда очищает экран?", 'en': "Which command clears the screen?", 'ar': "ما هو الأمر الذي يمسح الشاشة؟"}, 'options': ['clear', 'cls', 'clean', 'wipe'], 'answer': 'clear'},
+    {'q': {'uz': "Python'da matn chiqarish uchun nima ishlatiladi?", 'ru': "Что используется для вывода текста в Python?", 'en': "What is used to print text in Python?", 'ar': "ماذا يستخدم لطباعة النص في Python؟"}, 'options': ['print()', 'echo()', 'display()', 'output()'], 'answer': 'print()'},
+    {'q': {'uz': "Faylni o'chirish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда удаляет файл?", 'en': "Which command deletes a file?", 'ar': "ما هو الأمر الذي يحذف ملفًا؟"}, 'options': ['rm', 'del', 'delete', 'erase'], 'answer': 'rm'}
 ]
 
 # ==========================================
 # KLAVIATURALAR
 # ==========================================
 def get_lang_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
-        [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")]
-    ])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")], [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")]])
 
 def get_main_menu(lang):
     t = TEXTS[lang]
@@ -543,9 +381,10 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
-            admin_msg = f"📩 **Yangi murojaat!**\n\n👤 Kimdan: {user.first_name} (@{user.username})\n🆔 ID: `{user.id}`\n\n💬 Xabar: {update.message.text}"
+            # Maxsus formatda xabar yuborish (backticksiz)
+            admin_msg = f"📩 Yangi murojaat!\n\n👤 Kimdan: {user.first_name} (@{user.username})\n🆔 ID: {user.id}\n\n💬 Xabar: {update.message.text}"
             try:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode='Markdown')
+                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
                 await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang))
             except Exception as e:
                 logging.error(f"Admin ga xabar yuborishda xato: {e}")
@@ -554,8 +393,11 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user.id == ADMIN_ID and update.message.reply_to_message:
-        original_text = update.message.reply_to_message.text
-        match = re.search(r'ID: `(\d+)`', original_text)
+        original_text = update.message.reply_to_message.text or ""
+        
+        # Endi faqat ID: dan keyingi raqamlarni qidiramiz (backticksiz va xavfsiz usul)
+        match = re.search(r'🆔 ID:\s*(\d+)', original_text)
+        
         if match:
             target_user_id = int(match.group(1))
             try:
