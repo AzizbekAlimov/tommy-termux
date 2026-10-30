@@ -5,6 +5,7 @@ import aiohttp
 import re
 import asyncio
 import asyncpg
+import base64
 from io import BytesIO
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -28,10 +29,7 @@ TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# AI Mijozi
 ai_client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com") if DEEPSEEK_API_KEY else None
-
-# Baza puli
 db_pool = None
 
 async def init_db():
@@ -47,9 +45,8 @@ async def init_db():
                     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-        logging.info("✅ Ma'lumotlar bazasi muvaffaqiyatli ulandi!")
     except Exception as e:
-        logging.error(f"❌ Baza xatosi: {e}")
+        logging.error(f"Baza xatosi: {e}")
 
 async def add_user(user_id, lang='uz'):
     if not db_pool: return
@@ -80,7 +77,7 @@ LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101}
 PYTHON_EXTRA_VIDEOS = [96]
 
 # ==========================================
-# TILLAR LUG'ATI (To'liq va xatosiz)
+# TILLAR LUG'ATI
 # ==========================================
 TEXTS = {
     'uz': {
@@ -122,11 +119,14 @@ TEXTS = {
         'admin_bcast_start': "📢 **Ommaviy xabar rejimi.**\n\nBarchaga yubormoqchi bo'lgan xabarni yuboring:",
         'admin_bcast_wait': "⏳ Xabar yuborilmoqda...", 'admin_bcast_done': "✅ **Yakunlandi!**\nYuborildi: {success}\nXatolik: {fail}",
         'admin_bcast_cancel': "❌ Bekor qilindi.",
-        'ai_prompt': "🤖 **AI Dasturchi**\n\nMenga dasturlash bo'yicha savolingizni yoki yozmoqchi bo'lgan kodingizni yuboring. Men sizga yordam beraman va tayyor kodni fayl ko'rinishida qaytaraman.\n\nMasalan: \"Menga kalkulyator dasturini yozib ber\" yoki \"Bu kodda xatolik bor, tuzatib ber\".",
-        'ai_wait': "⏳ AI o'ylamoqda, iltimos kuting...",
+        'ai_prompt': "🤖 **AI Dasturchi (Kuchli)**\n\nMenga savolingizni yozing, kod faylini (.py, .lua) tashlang yoki xatolik chiqqan rasmni yuboring.\n\nMen kodingizni tahlil qilib, xatolarini topaman va tuzatilgan kodni fayl qilib qaytaraman!\n\n*Eslatma: Video orqali tahlil qilish uchun videodan skrinshot olib yuboring.*",
+        'ai_wait': "🧠 AI o'ylamoqda va kodingizni tahlil qilmoqda. Iltimos kuting...",
         'ai_error': "❌ **Xatolik!** AI bilan bog'lanishda muammo yuz berdi.",
-        'ai_code_found': "✅ **Kod tayyor!**\n\nMana siz so'ragan kod fayli.",
-        'ai_no_code': "🤖 **AI Javobi:**\n\n{text}"
+        'ai_code_found': "✅ **Tuzatilgan kod tayyor!**\n\nMana siz so'ragan kod fayli.",
+        'ai_no_code': "🤖 **AI Javobi:**\n\n{text}",
+        'ai_vision_error': "⚠️ **Diqqat:** Hozircha AI rasmlarni to'liq tahlil qila olmaydi. Iltimos, rasmdagi kodni matn ko'rinishida nusxalab yuboring yoki kod faylini (.py) tashlang.",
+        'ai_unsupported_file': "⚠️ Iltimos, faqat matnli kod fayllarini (.py, .lua, .txt) yuboring. Boshqa fayllarni o'qiy olmayman.",
+        'ai_video_error': "🎥 **Videoni tahlil qila olmayman.**\n\nIltimos, videodan xatolik ko'ringan joyni skrinshot (rasm) qilib yuboring yoki xato matnini yozib yuboring."
     },
     'ru': {
         'choose_lang': "👋 **Здравствуйте!**\n\nВыберите язык:", 'welcome': "👋 Я помощник по **Termux**.", 
@@ -149,9 +149,12 @@ TEXTS = {
         'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 
         'admin_bcast_start': "📢 Режим рассылки.", 'admin_bcast_wait': "⏳ Отправка...", 
         'admin_bcast_done': "✅ Готово! Успех: {success}, Ошибок: {fail}", 'admin_bcast_cancel': "❌ Отменено.", 
-        'ai_prompt': "🤖 **AI Программист**\n\nОтправьте свой вопрос или код. Я помогу и верну готовый код в виде файла.", 
-        'ai_wait': "⏳ AI готовит ответ...", 'ai_error': "❌ Ошибка AI.", 'ai_code_found': "✅ **Код готов!** Файл ниже.",
-        'ai_no_code': "🤖 **Ответ AI:**\n\n{text}"
+        'ai_prompt': "🤖 **AI Программист**\n\nОтправьте свой вопрос, файл кода (.py, .lua) или скриншот с ошибкой. Я проанализирую и верну исправленный код.", 
+        'ai_wait': "🧠 AI анализирует...", 'ai_error': "❌ Ошибка AI.", 'ai_code_found': "✅ **Код готов!** Файл ниже.",
+        'ai_no_code': "🤖 **Ответ AI:**\n\n{text}",
+        'ai_vision_error': "⚠️ **Внимание:** AI пока не может анализировать картинки. Скопируйте код текстом или отправьте файл.",
+        'ai_unsupported_file': "⚠️ Пожалуйста, отправляйте только текстовые файлы кода (.py, .lua, .txt).",
+        'ai_video_error': "🎥 **Видео не поддерживается.** Отправьте скриншот или текст ошибки."
     },
     'en': {
         'choose_lang': "👋 **Hello!**\n\nSelect language:", 'welcome': "👋 I am your **Termux** assistant.", 
@@ -174,9 +177,12 @@ TEXTS = {
         'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 
         'admin_bcast_start': "📢 Broadcast mode.", 'admin_bcast_wait': "⏳ Sending...", 
         'admin_bcast_done': "✅ Done! Success: {success}, Fail: {fail}", 'admin_bcast_cancel': "❌ Cancelled.", 
-        'ai_prompt': "🤖 **AI Coder**\n\nSend your question or code. I will help and return the code as a file.", 
-        'ai_wait': "⏳ AI is preparing...", 'ai_error': "❌ AI error.", 'ai_code_found': "✅ **Code ready!** File below.",
-        'ai_no_code': "🤖 **AI Response:**\n\n{text}"
+        'ai_prompt': "🤖 **AI Coder**\n\nSend your question, code file (.py, .lua), or a screenshot of the error. I will analyze and return the fixed code.", 
+        'ai_wait': "🧠 AI is analyzing...", 'ai_error': "❌ AI error.", 'ai_code_found': "✅ **Code ready!** File below.",
+        'ai_no_code': "🤖 **AI Response:**\n\n{text}",
+        'ai_vision_error': "⚠️ **Note:** AI cannot analyze images yet. Please copy the code as text or send a file.",
+        'ai_unsupported_file': "⚠️ Please send only text-based code files (.py, .lua, .txt).",
+        'ai_video_error': "🎥 **Video not supported.** Please send a screenshot or error text."
     },
     'ar': {
         'choose_lang': "👋 **مرحباً!**\n\nاختر اللغة:", 'welcome': "👋 أنا مساعد **Termux**.", 
@@ -199,9 +205,12 @@ TEXTS = {
         'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 
         'admin_bcast_start': "📢 وضع البث.", 'admin_bcast_wait': "⏳ جاري الإرسال...", 
         'admin_bcast_done': "✅ تم! النجاح: {success}, الفشل: {fail}", 'admin_bcast_cancel': "❌ تم الإلغاء.", 
-        'ai_prompt': "🤖 **مبرمج AI**\n\nأرسل سؤالك أو الكود. سأساعدك وأعيد الكود كملف.", 
-        'ai_wait': "⏳ AI يحضر الرد...", 'ai_error': "❌ خطأ AI.", 'ai_code_found': "✅ **الكود جاهز!** الملف أدناه.",
-        'ai_no_code': "🤖 **رد AI:**\n\n{text}"
+        'ai_prompt': "🤖 **مبرمج AI**\n\nأرسل سؤالك، ملف الكود (.py, .lua)، أو لقطة شاشة للخطأ. سأحلل وأعيد الكود المصحح.", 
+        'ai_wait': "🧠 AI يحلل...", 'ai_error': "❌ خطأ AI.", 'ai_code_found': "✅ **الكود جاهز!** الملف أدناه.",
+        'ai_no_code': "🤖 **رد AI:**\n\n{text}",
+        'ai_vision_error': "⚠️ **ملاحظة:** AI لا يمكنه تحليل الصور بعد. يرجى نسخ الكود كنص أو إرسال ملف.",
+        'ai_unsupported_file': "⚠️ يرجى إرسال ملفات الأكواد النصية فقط (.py, .lua, .txt).",
+        'ai_video_error': "🎥 **الفيديو غير مدعوم.** يرجى إرسال لقطة شاشة أو نص الخطأ."
     }
 }
 
@@ -427,65 +436,110 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
 
 # ==========================================
-# AI LOGIKASI
+# AI LOGIKASI (MATN, FAYL, RASM)
 # ==========================================
 async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
-        await update.message.reply_text("❌ AI xizmati sozlanmagan (DEEPSEEK_API_KEY yo'q).")
+        await update.message.reply_text("❌ AI xizmati sozlanmagan.")
         return
 
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
-    user_text = update.message.text
-
     msg = await update.message.reply_text(t['ai_wait'])
 
     try:
-        # DeepSeek ga so'rov (Kod yozishga undash)
+        content = []
+        user_query = ""
+
+        # 1. Agar oddiy matn yuborilgan bo'lsa
+        if update.message.text:
+            user_query = update.message.text
+            content.append({"type": "text", "text": user_query})
+
+        # 2. Agar rasm yuborilgan bo'lsa
+        elif update.message.photo:
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+            base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+            
+            # DeepSeek hozircha vision'ni to'liq qo'llamaydi, lekin OpenAI formatida yuboramiz
+            content.append({"type": "text", "text": "Iltimos, ushbu rasmdagi kod yoki xatoni tahlil qilib, tuzatilgan kodni yozib ber."})
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}})
+
+        # 3. Agar fayl yuborilgan bo'lsa (.py, .lua, .txt)
+        elif update.message.document:
+            doc = update.message.document
+            if doc.file_name.endswith(('.py', '.lua', '.txt', '.js', '.cpp', '.c', '.html')):
+                file_content = await (await doc.get_file()).download_as_bytearray()
+                try:
+                    text_content = file_content.decode('utf-8')
+                    user_query = f"Fayl nomi: {doc.file_name}\n\nKod:\n{text_content}\n\nIltimos, ushbu kodni tahlil qilib, xatolarini tuzatib, tayyor ishlaydigan holatga keltiring."
+                    content.append({"type": "text", "text": user_query})
+                except UnicodeDecodeError:
+                    await msg.edit_text(t['ai_unsupported_file'])
+                    return
+            else:
+                await msg.edit_text(t['ai_unsupported_file'])
+                return
+
+        # 4. Video yoki boshqa narsalar
+        else:
+            await msg.edit_text(t['ai_video_error'])
+            return
+
+        # AI ga so'rov yuborish
         response = await ai_client.chat.completions.create(
             model="deepseek-chat",
             messages=[
-                {"role": "system", "content": "You are a professional programming assistant. Provide complete, working code. Always wrap code in markdown blocks like ```python ... ``` or ```lua ... ```. If the user asks for Python, provide Python. If Lua, provide Lua."},
-                {"role": "user", "content": user_text}
+                {"role": "system", "content": "You are an expert Senior Software Engineer and AI Tutor. Analyze the provided code or image carefully. Find all bugs, syntax errors, and logical flaws. Fix them. Provide the full, working, corrected code. Always wrap the final code in markdown blocks (```python ... ``` or ```lua ... ```). Think step by step before giving the code."},
+                {"role": "user", "content": content}
             ],
             max_tokens=4000
         )
+        
         ai_reply = response.choices[0].message.content
         
-        # Kod blokini qidirish (```py, ```python, ```lua, ```)
-        # Regex barcha holatlarni qamrab oladi
-        code_match = re.search(r'```(?:python|py|lua)?\s*(.*?)```', ai_reply, re.DOTALL | re.IGNORECASE)
+        # Kod blokini qidirish
+        code_match = re.search(r'```(?:python|py|lua|javascript|js|cpp|c)?\s*(.*?)```', ai_reply, re.DOTALL | re.IGNORECASE)
         
         if code_match:
             code_text = code_match.group(1).strip()
             
             # Fayl nomini aniqlash
-            # Agar AI kod ichida 'lua' yoki 'function' ko'p bo'lsa, .lua qilamiz, aks holda .py
-            if "lua" in user_text.lower() or "lua" in ai_reply.lower() and "def " not in code_text:
-                filename = "code.lua"
+            if "lua" in user_query.lower() or (update.message.document and update.message.document.file_name.endswith('.lua')):
+                filename = "fixed_code.lua"
                 lang_name = "Lua"
             else:
-                filename = "code.py"
+                filename = "fixed_code.py"
                 lang_name = "Python"
             
-            # Faylni yuborish
+            # Kodni fayl qilib yuborish
             code_file = BytesIO(code_text.encode('utf-8'))
             code_file.name = filename
             
             await context.bot.send_document(
                 chat_id=update.message.chat_id,
                 document=code_file,
-                caption=f"🤖 **AI tomonidan yaratilgan kod**\n\nTil: {lang_name}\nFayl: `{filename}`\n\n{t['ai_code_found']}",
+                caption=f"🤖 **Tuzatilgan kod ({lang_name})**\n\nFayl: `{filename}`\n\n{t['ai_code_found']}",
                 parse_mode='Markdown'
             )
+            
+            # AI ning tushuntirish qismini ham yuborish (agar kod bo'lsa)
+            explanation = ai_reply.replace(code_match.group(0), "").strip()
+            if explanation:
+                await context.bot.send_message(chat_id=update.message.chat_id, text=f"📝 **AI Tushuntirmasi:**\n\n{explanation}", parse_mode='Markdown')
+                
             await msg.delete()
         else:
-            # Kod yo'q, oddiy matn sifatida yuborish
+            # Agar kod topilmasa, faqat tushuntirishni yuboramiz
             await msg.edit_text(t['ai_no_code'].format(text=ai_reply), parse_mode='Markdown')
 
     except Exception as e:
         logging.error(f"AI xatosi: {e}")
-        await msg.edit_text(t['ai_error'])
+        if "vision" in str(e).lower() or "image" in str(e).lower():
+            await msg.edit_text(t['ai_vision_error'], parse_mode='Markdown')
+        else:
+            await msg.edit_text(t['ai_error'], parse_mode='Markdown')
 
 # ==========================================
 # XABARLARNI QABUL QILISH
@@ -495,10 +549,12 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
     
+    # AI REJIMI
     if context.user_data.get('state') == 'in_ai':
-        if update.message.text: await handle_ai_message(update, context)
+        await handle_ai_message(update, context)
         return
 
+    # BROADCAST REJIMI
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_broadcast':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -507,6 +563,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await process_broadcast(update, context)
         return
 
+    # MUROJAAT REJIMI
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
             admin_msg = f"📩 Yangi murojaat!\n\n👤 Kimdan: {user.first_name} (@{user.username})\n🆔 ID: {user.id}\n\n💬 Xabar: {update.message.text}"
@@ -517,6 +574,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = None
         return
 
+    # ADMIN JAVOBI
     if user.id == ADMIN_ID and update.message.reply_to_message:
         original_text = update.message.reply_to_message.text or ""
         match = re.search(r'🆔 ID:\s*(\d+)', original_text)
@@ -539,10 +597,8 @@ async def send_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get('lang', 'uz')
     msg = await update.message.reply_text(TEXTS[lang]['admin_bcast_wait'])
-    
     users = await get_all_users()
     success, fail = 0, 0
-    
     for uid in users:
         if uid == ADMIN_ID: continue
         try:
@@ -550,7 +606,6 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             success += 1
             await asyncio.sleep(0.05)
         except Exception: fail += 1
-            
     context.user_data['state'] = None
     await msg.edit_text(TEXTS[lang]['admin_bcast_done'].format(success=success, fail=fail), parse_mode='Markdown')
 
@@ -561,7 +616,6 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ru = lang_stats.get('ru', 0)
     en = lang_stats.get('en', 0)
     ar = lang_stats.get('ar', 0)
-    
     stats_text = (
         "📊 **BOT STATISTIKASI (DATABASE)**\n\n"
         f"👥 **Jami foydalanuvchilar:** {total} ta\n\n"
@@ -592,7 +646,7 @@ async def on_startup():
     await application.initialize()
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Bot va AI muvaffaqiyatli ishga tushdi!")
+    print(f"✅ Bot, AI va Baza muvaffaqiyatli ishga tushdi!")
 
 @app.on_event("shutdown")
 async def on_shutdown():
