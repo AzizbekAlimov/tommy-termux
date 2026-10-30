@@ -2,19 +2,23 @@ import os
 import logging
 import random
 import aiohttp
+import re
 from io import BytesIO
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
 import uvicorn
 
 # ==========================================
-# XAVFSIZLIK QISMI
+# XAVFSIZLIK VA SOZLAMALAR
 # ==========================================
 TOKEN = os.environ.get("TOKEN")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+
+# SIZNING TELEGRAM ID RAQAMINGIZ
+ADMIN_ID = 7383782449 
 
 if not TOKEN or not RENDER_EXTERNAL_URL:
     raise ValueError("Xatolik: TOKEN yoki RENDER_EXTERNAL_URL kiritilmagan!")
@@ -25,8 +29,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # VIDEOLAR VA APK MA'LUMOTLARI
 # ==========================================
 CHANNEL_USERNAME = "@termux_tutoril" 
-
-# Termuxning arm64-v8a versiyasi (Zamonaviy telefonlar uchun, ~40MB)
 TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_arm64-v8a.apk"
 
 LESSONS = {
@@ -49,14 +51,15 @@ PYTHON_EXTRA_VIDEOS = [96]
 TEXTS = {
     'uz': {
         'choose_lang': "👋 **Assalomu alaykum!**\n\nIltimos, o'zingizga qulay tilni tanlang:",
-        'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.\n\n📚 TERMUX UCHUN maxsus video darsliklar tayyor\n📚 PAK LUA UCHUN maxsus video darsliklar tayyor",
+        'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
         'btn_termux': "📽️ TERMUX VIDEO DARSLIKLAR",
         'btn_lua': "📽️ TERMUX LUA PAK VIDEO DARSLIK",
         'btn_apk': "📥 TERMUX APK YUKLAB OLISH",
         'btn_tip': "💡 Kunlik maslahat",
         'btn_cheatsheet': "📜 Muhim buyruqlar",
+        'btn_quiz': "🧠 Bilimingizni sinang (Test)",
+        'btn_support': "✉️ Adminga murojaat qilish",
         'btn_another_tip': "🔄 Yana maslahat",
-        'btn_contact': "Murojaat uchun",
         'btn_change_lang': "🌐 Tilni o'zgartirish",
         'btn_back': "🔙 Bosh menyu",
         'btn_prev': "⬅️ Oldingi",
@@ -75,22 +78,30 @@ TEXTS = {
         'cat_network': "🌐 Tarmoq va internet",
         'cat_system': "⚙️ Tizim va boshqalar",
         'btn_back_cheat': "🔙 Orqaga",
-        'apk_caption': "📱 **Termux ilovasi (APK)**\n\nMana sizga Termuxning rasmiy va zamonaviy telefonlar uchun mos versiyasi! \n\n1. Faylni yuklab oling.\n2. Telefoningizga o'rnating.\n3. Darsliklarimizni bemalol boshlashingiz mumkin! 🚀",
+        'apk_caption': "📱 **Termux ilovasi (APK)**\n\nMana sizga Termuxning rasmiy versiyasi! \n\n1. Faylni yuklab oling.\n2. Telefoningizga o'rnating.\n3. Darsliklarimizni boshlang! 🚀",
         'apk_file_name': "Termux_Ilovasi.apk",
         'apk_loading': "⏳ Iltimos kuting, Termux APK yuklanmoqda...",
-        'apk_too_big': "⚠️ **Diqqat!**\n\nFayl hajmi Telegram cheklovidan (50MB) katta. Iltimos, Termuxni to'g'ridan-to'g'ri havola orqali yuklab oling:\n\n👇 [Termuxni yuklab olish](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **Xatolik!** APK faylini yuklab bo'lmadi. Keyinroq qayta urinib ko'ring."
+        'apk_too_big': "⚠️ **Diqqat!**\n\nFayl hajmi Telegram cheklovidan katta. Iltimos, havola orqali yuklab oling:\n\n👇 [Termuxni yuklab olish](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
+        'apk_error': "❌ **Xatolik!** APK faylini yuklab bo'lmadi.",
+        'support_prompt': "✉️ **Adminga murojaat**\n\nIltimos, savolingiz yoki muammoingizni bitta xabar qilib yozib qoldiring. Tez orada javob beramiz.",
+        'support_sent': "✅ **Xabaringiz yuborildi!**\n\nAdmin tez orada siz bilan bog'lanadi.",
+        'support_reply': "📬 **Admin javobi:**\n\n",
+        'quiz_start': "🧠 **Bilimingizni sinab ko'ring!**\n\nQuyidagi savolga to'g'ri javobni tanlang:",
+        'quiz_correct': "✅ **To'g'ri javob! Barakalla!** 🎉",
+        'quiz_wrong': "❌ **Xato javob!**\n\nTo'g'ri javob: **{answer}**",
+        'btn_next_quiz': "➡️ Keyingi savol"
     },
     'ru': {
         'choose_lang': "👋 **Здравствуйте!**\n\nПожалуйста, выберите удобный для вас язык:",
-        'welcome': "👋 **Здравствуйте!**\n\nЯ помощник по **Termux и программированию**.\n\n📚 Подготовлены специальные видеоуроки для TERMUX\n📚 Подготовлены специальные видеоуроки для PAK LUA",
+        'welcome': "👋 **Здравствуйте!**\n\nЯ помощник по **Termux и программированию**.",
         'btn_termux': "📽️ ВИДЕОУРОКИ TERMUX",
         'btn_lua': "📽️ ВИДЕОУРОКИ TERMUX LUA",
         'btn_apk': "📥 СКАЧАТЬ TERMUX APK",
         'btn_tip': "💡 Совет дня",
         'btn_cheatsheet': "📜 Важные команды",
+        'btn_quiz': "🧠 Проверь себя (Тест)",
+        'btn_support': "✉️ Написать админу",
         'btn_another_tip': "🔄 Ещё совет",
-        'btn_contact': "Для обращений",
         'btn_change_lang': "🌐 Изменить язык",
         'btn_back': "🔙 Главное меню",
         'btn_prev': "⬅️ Предыдущий",
@@ -109,22 +120,30 @@ TEXTS = {
         'cat_network': "🌐 Сеть и интернет",
         'cat_system': "⚙️ Система и другое",
         'btn_back_cheat': "🔙 Назад",
-        'apk_caption': "📱 **Приложение Termux (APK)**\n\nВот официальная версия Termux для современных телефонов! \n\n1. Скачайте файл.\n2. Установите на свой телефон.\n3. Можете смело начинать наши уроки! 🚀",
+        'apk_caption': "📱 **Приложение Termux (APK)**\n\nВот официальная версия Termux! \n\n1. Скачайте файл.\n2. Установите на свой телефон.\n3. Начинайте уроки! 🚀",
         'apk_file_name': "Termux_Prilozhenie.apk",
         'apk_loading': "⏳ Пожалуйста, подождите, Termux APK загружается...",
-        'apk_too_big': "⚠️ **Внимание!**\n\nРазмер файла превышает лимит Telegram (50 МБ). Пожалуйста, скачайте Termux по прямой ссылке:\n\n👇 [Скачать Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **Ошибка!** Не удалось загрузить APK файл. Попробуйте позже."
+        'apk_too_big': "⚠️ **Внимание!**\n\nРазмер файла превышает лимит Telegram. Скачайте по ссылке:\n\n👇 [Скачать Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
+        'apk_error': "❌ **Ошибка!** Не удалось загрузить APK файл.",
+        'support_prompt': "✉️ **Написать админу**\n\nПожалуйста, напишите свой вопрос или проблему одним сообщением. Мы скоро ответим.",
+        'support_sent': "✅ **Ваше сообщение отправлено!**\n\nАдмин свяжется с вами в ближайшее время.",
+        'support_reply': "📬 **Ответ админа:**\n\n",
+        'quiz_start': "🧠 **Проверьте свои знания!**\n\nВыберите правильный ответ на следующий вопрос:",
+        'quiz_correct': "✅ **Правильный ответ! Молодец!** 🎉",
+        'quiz_wrong': "❌ **Неправильный ответ!**\n\nПравильный ответ: **{answer}**",
+        'btn_next_quiz': "➡️ Следующий вопрос"
     },
     'en': {
         'choose_lang': "👋 **Hello!**\n\nPlease select a convenient language for you:",
-        'welcome': "👋 **Hello!**\n\nI am an assistant bot for **Termux and Programming**.\n\n📚 Special video tutorials for TERMUX are ready\n📚 Special video tutorials for PAK LUA are ready",
+        'welcome': "👋 **Hello!**\n\nI am an assistant bot for **Termux and Programming**.",
         'btn_termux': "📽️ TERMUX VIDEO LESSONS",
         'btn_lua': "📽️ TERMUX LUA VIDEO LESSONS",
         'btn_apk': "📥 DOWNLOAD TERMUX APK",
         'btn_tip': "💡 Daily Tip",
         'btn_cheatsheet': "📜 Important commands",
+        'btn_quiz': "🧠 Test your knowledge",
+        'btn_support': "✉️ Contact Admin",
         'btn_another_tip': "🔄 Another Tip",
-        'btn_contact': "Contact us",
         'btn_change_lang': "🌐 Change language",
         'btn_back': "🔙 Main menu",
         'btn_prev': "⬅️ Previous",
@@ -143,22 +162,30 @@ TEXTS = {
         'cat_network': "🌐 Network & Internet",
         'cat_system': "⚙️ System & Other",
         'btn_back_cheat': "🔙 Back",
-        'apk_caption': "📱 **Termux Application (APK)**\n\nHere is the official version of Termux for modern phones! \n\n1. Download the file.\n2. Install it on your phone.\n3. You can safely start our lessons! 🚀",
+        'apk_caption': "📱 **Termux Application (APK)**\n\nHere is the official version of Termux! \n\n1. Download the file.\n2. Install it on your phone.\n3. Start our lessons! 🚀",
         'apk_file_name': "Termux_App.apk",
         'apk_loading': "⏳ Please wait, Termux APK is downloading...",
-        'apk_too_big': "⚠️ **Attention!**\n\nThe file size exceeds the Telegram limit (50MB). Please download Termux via the direct link:\n\n👇 [Download Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **Error!** Could not download the APK file. Please try again later."
+        'apk_too_big': "⚠️ **Attention!**\n\nThe file size exceeds the Telegram limit. Please download via the direct link:\n\n👇 [Download Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
+        'apk_error': "❌ **Error!** Could not download the APK file.",
+        'support_prompt': "✉️ **Contact Admin**\n\nPlease write your question or problem in one message. We will reply soon.",
+        'support_sent': "✅ **Your message has been sent!**\n\nThe admin will contact you shortly.",
+        'support_reply': "📬 **Admin reply:**\n\n",
+        'quiz_start': "🧠 **Test your knowledge!**\n\nChoose the correct answer to the following question:",
+        'quiz_correct': "✅ **Correct answer! Well done!** 🎉",
+        'quiz_wrong': "❌ **Wrong answer!**\n\nThe correct answer is: **{answer}**",
+        'btn_next_quiz': "➡️ Next question"
     },
     'ar': {
         'choose_lang': "👋 **مرحباً!**\n\nالرجاء اختيار اللغة المناسبة لك:",
-        'welcome': "👋 **مرحباً!**\n\nأنا مساعد في **Termux والبرمجة**.\n\n📚 دروس فيديو خاصة لـ TERMUX جاهزة\n📚 دروس فيديو خاصة لـ PAK LUA جاهزة",
+        'welcome': "👋 **مرحباً!**\n\nأنا مساعد في **Termux والبرمجة**.",
         'btn_termux': "📽️ دروس فيديو TERMUX",
         'btn_lua': "📽️ دروس فيديو TERMUX LUA",
         'btn_apk': "📥 تحميل TERMUX APK",
         'btn_tip': "💡 نصيحة اليوم",
         'btn_cheatsheet': "📜 أوامر مهمة",
+        'btn_quiz': "🧠 اختبر معلوماتك",
+        'btn_support': "✉️ التواصل مع المسؤول",
         'btn_another_tip': "🔄 نصيحة أخرى",
-        'btn_contact': "للتواصل",
         'btn_change_lang': "🌐 تغيير اللغة",
         'btn_back': "🔙 القائمة الرئيسية",
         'btn_prev': "⬅️ السابق",
@@ -177,11 +204,18 @@ TEXTS = {
         'cat_network': "🌐 الشبكة والإنترنت",
         'cat_system': "⚙️ النظام وأخرى",
         'btn_back_cheat': "🔙 رجوع",
-        'apk_caption': "📱 **تطبيق Termux (APK)**\n\nهذه هي النسخة الرسمية من Termux للهواتف الحديثة! \n\n1. قم بتنزيل الملف.\n2. ثبته على هاتفك.\n3. يمكنك البدء في دروسنا بأمان! 🚀",
+        'apk_caption': "📱 **تطبيق Termux (APK)**\n\nهذه هي النسخة الرسمية من Termux! \n\n1. قم بتنزيل الملف.\n2. ثبته على هاتفك.\n3. ابدأ دروسنا! 🚀",
         'apk_file_name': "Termux_App.apk",
         'apk_loading': "⏳ يرجى الانتظار، يتم تنزيل Termux APK...",
-        'apk_too_big': "⚠️ **انتباه!**\n\nحجم الملف يتجاوز حد Telegram (50 ميجابايت). يرجى تنزيل Termux عبر الرابط المباشر:\n\n👇 [تنزيل Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
-        'apk_error': "❌ **خطأ!** تعذر تنزيل ملف APK. يرجى المحاولة لاحقًا."
+        'apk_too_big': "⚠️ **انتباه!**\n\nحجم الملف يتجاوز حد Telegram. يرجى تنزيل عبر الرابط المباشر:\n\n👇 [تنزيل Termux](https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_universal.apk)",
+        'apk_error': "❌ **خطأ!** تعذر تنزيل ملف APK.",
+        'support_prompt': "✉️ **التواصل مع المسؤول**\n\nيرجى كتابة سؤالك أو مشكلتك في رسالة واحدة. سنرد قريبا.",
+        'support_sent': "✅ **تم إرسال رسالتك!**\n\nسيتصل بك المسؤول قريبا.",
+        'support_reply': "📬 **رد المسؤول:**\n\n",
+        'quiz_start': "🧠 **اختبر معلوماتك!**\n\nاختر الإجابة الصحيحة للسؤال التالي:",
+        'quiz_correct': "✅ **إجابة صحيحة! أحسنت!** 🎉",
+        'quiz_wrong': "❌ **إجابة خاطئة!**\n\nالإجابة الصحيحة هي: **{answer}**",
+        'btn_next_quiz': "➡️ السؤال التالي"
     }
 }
 
@@ -212,6 +246,37 @@ COMMANDS_DATA = {
 }
 
 # ==========================================
+# TEST (QUIZ) SAVOLLARI BAZASI
+# ==========================================
+QUIZ_DATA = [
+    {
+        'q': {'uz': "Linux'da papka yaratish buyrug'i qaysi?", 'ru': "Какая команда создает папку в Linux?", 'en': "Which command creates a folder in Linux?", 'ar': "ما هو الأمر الذي ينشئ مجلدًا في Linux؟"},
+        'options': ['mkdir', 'cd', 'ls', 'rm'],
+        'answer': 'mkdir'
+    },
+    {
+        'q': {'uz': "Termux'da paketlarni o'rnatish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда используется для установки пакетов в Termux?", 'en': "Which command is used to install packages in Termux?", 'ar': "ما هو الأمر المستخدم لتثبيت الحزم في Termux؟"},
+        'options': ['pkg install', 'apt-get', 'pip install', 'install'],
+        'answer': 'pkg install'
+    },
+    {
+        'q': {'uz': "Ekranni tozalash uchun qaysi buyruq beriladi?", 'ru': "Какая команда очищает экран?", 'en': "Which command clears the screen?", 'ar': "ما هو الأمر الذي يمسح الشاشة؟"},
+        'options': ['clear', 'cls', 'clean', 'wipe'],
+        'answer': 'clear'
+    },
+    {
+        'q': {'uz': "Python'da matn chiqarish uchun nima ishlatiladi?", 'ru': "Что используется для вывода текста в Python?", 'en': "What is used to print text in Python?", 'ar': "ماذا يستخدم لطباعة النص في Python؟"},
+        'options': ['print()', 'echo()', 'display()', 'output()'],
+        'answer': 'print()'
+    },
+    {
+        'q': {'uz': "Faylni o'chirish uchun qaysi buyruq ishlatiladi?", 'ru': "Какая команда удаляет файл?", 'en': "Which command deletes a file?", 'ar': "ما هو الأمر الذي يحذف ملفًا؟"},
+        'options': ['rm', 'del', 'delete', 'erase'],
+        'answer': 'rm'
+    }
+]
+
+# ==========================================
 # KLAVIATURALAR
 # ==========================================
 def get_lang_keyboard():
@@ -226,9 +291,10 @@ def get_main_menu(lang):
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1")],
         [InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
         [InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")], 
+        [InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
+        [InlineKeyboardButton(t['btn_support'], callback_data="support_start")],
         [InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")], 
         [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet")], 
-        [InlineKeyboardButton(t['btn_contact'], url="https://t.me/Tommy_1727")],
         [InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
     ])
 
@@ -272,6 +338,19 @@ def get_cheatsheet_keyboard(lang):
         [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
     ])
 
+def get_quiz_keyboard(options, correct_answer, lang):
+    t = TEXTS[lang]
+    keyboard = []
+    row = []
+    for opt in options:
+        row.append(InlineKeyboardButton(opt, callback_data=f"quiz_ans_{opt}"))
+        if len(row) == 2:
+            keyboard.append(row); row = []
+    if row: keyboard.append(row)
+    keyboard.append([InlineKeyboardButton(t['btn_next_quiz'], callback_data="quiz_start")])
+    keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+    return InlineKeyboardMarkup(keyboard)
+
 # ==========================================
 # HANDLERLAR
 # ==========================================
@@ -302,39 +381,66 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
 
-    # APK YUBORISH (LIMITNI TEKSHIRISH BILAN)
-    if data == "send_apk":
+    if data == "quiz_start":
+        question_data = random.choice(QUIZ_DATA)
+        context.user_data['current_quiz'] = question_data
+        text = t['quiz_start'] + f"\n\n❓ **{question_data['q'][lang]}**"
+        keyboard = get_quiz_keyboard(question_data['options'], question_data['answer'], lang)
+        try:
+            await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
+        except Exception:
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode='Markdown')
+
+    elif data.startswith("quiz_ans_"):
+        selected_ans = data.replace("quiz_ans_", "")
+        question_data = context.user_data.get('current_quiz')
+        if not question_data:
+            return await query.answer("Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+        correct_ans = question_data['answer']
+        if selected_ans == correct_ans:
+            text = t['quiz_correct']
+        else:
+            text = t['quiz_wrong'].format(answer=correct_ans)
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t['btn_next_quiz'], callback_data="quiz_start")],
+            [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
+        ])
+        try:
+            await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
+        except Exception:
+            pass
+
+    elif data == "support_start":
+        context.user_data['state'] = 'in_support'
+        text = t['support_prompt']
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
+        try:
+            await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
+        except Exception:
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode='Markdown')
+
+    elif data == "send_apk":
         msg = await context.bot.send_message(chat_id=chat_id, text=t['apk_loading'])
         await query.message.delete()
-        
         try:
-            # 1. Faylni yuklab olamiz
             async with aiohttp.ClientSession() as session:
                 async with session.get(TERMUX_APK_URL) as response:
                     if response.status == 200:
                         apk_content = await response.read()
-                        
-                        # 2. Hajmini tekshiramiz (Telegram limiti 50MB)
                         if len(apk_content) > 50 * 1024 * 1024:
-                            # Agar 50MB dan katta bo'lsa, havola tashlaymiz
                             await msg.edit_text(t['apk_too_big'], parse_mode='Markdown', disable_web_page_preview=False)
                         else:
-                            # 3. 50MB dan kichik bo'lsa, faylni o'zini yuboramiz
                             apk_file = BytesIO(apk_content)
                             apk_file.name = t['apk_file_name']
-                            
                             await context.bot.send_document(
-                                chat_id=chat_id,
-                                document=apk_file,
-                                caption=t['apk_caption'],
-                                parse_mode='Markdown',
-                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
+                                chat_id=chat_id, document=apk_file, caption=t['apk_caption'],
+                                parse_mode='Markdown', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
                             )
                             await msg.delete()
                     else:
                         raise Exception(f"HTTP xatosi: {response.status}")
         except Exception as e:
-            logging.error(f"APK yuklashda xatolik: {e}")
+            logging.error(f"APK xatosi: {e}")
             await msg.edit_text(t['apk_error'])
         return
 
@@ -420,10 +526,49 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_py'], reply_markup=back_kb)
         
     elif data == "back_to_start":
+        context.user_data['state'] = None
         try:
             await query.edit_message_text(text=t['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
         except Exception:
             await context.bot.send_message(chat_id=chat_id, text=t['welcome'], reply_markup=get_main_menu(lang), parse_mode='Markdown')
+
+
+# ==========================================
+# XABARLARNI QABUL QILISH (SUPPORT VA ADMIN JAVOBI)
+# ==========================================
+async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = context.user_data.get('lang', 'uz')
+    t = TEXTS[lang]
+    
+    if context.user_data.get('state') == 'in_support':
+        if update.message.text:
+            admin_msg = f"📩 **Yangi murojaat!**\n\n👤 Kimdan: {user.first_name} (@{user.username})\n🆔 ID: `{user.id}`\n\n💬 Xabar: {update.message.text}"
+            try:
+                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode='Markdown')
+                await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang))
+            except Exception as e:
+                logging.error(f"Admin ga xabar yuborishda xato: {e}")
+                await update.message.reply_text("❌ Xatolik yuz berdi. Iltimos keyinroq urinib ko'ring.")
+            context.user_data['state'] = None
+        return
+
+    if user.id == ADMIN_ID and update.message.reply_to_message:
+        original_text = update.message.reply_to_message.text
+        match = re.search(r'ID: `(\d+)`', original_text)
+        if match:
+            target_user_id = int(match.group(1))
+            try:
+                await context.bot.send_message(
+                    chat_id=target_user_id,
+                    text=f"{t['support_reply']}{update.message.text}"
+                )
+                await update.message.reply_text("✅ Javobingiz foydalanuvchiga yuborildi!")
+            except Exception as e:
+                await update.message.reply_text(f"❌ Xatolik: {e}")
+        else:
+            await update.message.reply_text("❌ Foydalanuvchi ID sini aniqlab bo'lmadi.")
+
 
 # ==========================================
 # VEB SERVER VA WEBHOOK QISMI
@@ -431,6 +576,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(button_tap))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
 
 app = FastAPI()
 
