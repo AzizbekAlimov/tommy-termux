@@ -244,9 +244,9 @@ TEXTS = {
     'uz': {
         'choose_lang': "👋 **Assalomu alaykum!**\n\nIltimos, o'zingizga qulay tilni tanlang:",
         'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
-        'btn_termux': "📽️ TERMUX VIDEO DARSLIKLAR", 'btn_lua': "📽️ LUA PAK DARSLIK",
+        'btn_termux': "📽️ TERMUX DARSLIKLAR", 'btn_lua': "📽️ LUA PAK DARSLIK",
         'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH", 
-        'btn_ai': "🤖 AI Dasturchi (Kod)", 'btn_profile': "👤 Mening profilim",
+        'btn_ai': "🤖 AI Dasturchi", 'btn_profile': "👤 Mening profilim",
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
         'btn_change_lang': "🌐 Til", 'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar",
@@ -367,7 +367,7 @@ QUIZ_DATA = [
 ]
 
 # ==========================================
-# KLAVIATURALAR (KETMA-KET TARTIBDA)
+# KLAVIATURALAR (IXCHAM 2 USTUNLI)
 # ==========================================
 def get_lang_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")], [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")]])
@@ -375,25 +375,16 @@ def get_lang_keyboard():
 def get_main_menu(lang):
     t = TEXTS[lang]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t['btn_termux'], callback_data="page_1")],
-        [InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
-        [InlineKeyboardButton(t['btn_security'], callback_data="sec_start")],
-        [InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
-        [InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
-        [InlineKeyboardButton(t['btn_files'], callback_data="files_menu")],
-        [InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
-        [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet")],
-        [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")],
-        [InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_java'], callback_data="java_info")],
-        [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start")],
-        [InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
-        [InlineKeyboardButton(t['btn_top'], callback_data="top_users")],
-        [InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
-        [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile")],
-        [InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
-        [InlineKeyboardButton(t['btn_support'], callback_data="support_start")],
-        [InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
+        [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
+        [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
+        [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
+        [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
+        [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
+        [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start"), InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
+        [InlineKeyboardButton(t['btn_top'], callback_data="top_users"), InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
+        [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
+        [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")],
+        [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")] 
     ])
 
 def get_theme_keyboard(lang):
