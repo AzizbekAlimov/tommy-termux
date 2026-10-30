@@ -18,13 +18,17 @@ from google.genai import types
 import uvicorn
 
 # ==========================================
-# SOZLAMALAR
+# SOZLAMALAR (Environment Variables)
 # ==========================================
 TOKEN = os.environ.get("TOKEN")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# AI API KALITLARI
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") # YANGI
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")       # YANGI
 
 ADMIN_ID = 7383782449
 CHANNEL_USERNAME = "@Tommy_cheat" 
@@ -32,13 +36,31 @@ TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# AI Mijozlari (Faqat Groq va Gemini)
+# ==========================================
+# AI MIJOZLARI
+# ==========================================
+# 1. OpenRouter (Qwen Coder - Eng yaxshi bepul kodlash AI)
+openrouter_client = AsyncOpenAI(
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    timeout=300.0
+) if OPENROUTER_API_KEY else None
+
+# 2. Mistral (Codestral - Kodlashga ixtisoslashgan)
+mistral_client = AsyncOpenAI(
+    api_key=MISTRAL_API_KEY,
+    base_url="https://api.mistral.ai/v1",
+    timeout=300.0
+) if MISTRAL_API_KEY else None
+
+# 3. Groq (Tezkor Llama 3.3)
 groq_client = AsyncOpenAI(
     api_key=GROQ_API_KEY, 
     base_url="https://api.groq.com/openai/v1",
     timeout=300.0 
 ) if GROQ_API_KEY else None
 
+# 4. Gemini (Rasm va zaxira uchun)
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 db_pool = None
@@ -127,7 +149,7 @@ TEXTS = {
         'admin_bcast_start': "📢 **Ommaviy xabar rejimi.**\n\nBarchaga yubormoqchi bo'lgan xabarni yuboring:",
         'admin_bcast_wait': "⏳ Xabar yuborilmoqda...", 'admin_bcast_done': "✅ **Yakunlandi!**\nYuborildi: {success}\nXatolik: {fail}",
         'admin_bcast_cancel': "❌ Bekor qilindi.",
-        'ai_prompt': "🤖 **AI Dasturchi (Groq + Gemini)**\n\nMen oddiy suhbatlashmayman. Menga faqat dasturlash bo'yicha topshiriq bering!\n\n💻 **Nimalar qila olaman?**\n- Python yoki Lua'da kod yozib beraman.\n- Xatoliklarni tuzataman.\n- Yuborgan kod faylingizni (.py, .lua) tahlil qilaman.\n- Rasmdagi kodni ko'rib, xatosini topaman.\n\nMisol: \"Menga kalkulyator yozib ber\" yoki kod faylini tashlang.",
+        'ai_prompt': "🤖 **AI Dasturchi (Super Fallback Tizimi)**\n\nMen oddiy suhbatlashmayman. Menga faqat dasturlash bo'yicha topshiriq bering!\n\n💻 **Nimalar qila olaman?**\n- Python yoki Lua'da kod yozib beraman.\n- Xatoliklarni tuzataman.\n- Yuborgan kod faylingizni (.py, .lua) tahlil qilaman.\n- Rasmdagi kodni ko'rib, xatosini topaman.\n\nMisol: \"Menga kalkulyator yozib ber\" yoki kod faylini tashlang.",
         'ai_wait': "🧠 AI Kodingiz ustida ishlamoqda. Iltimos kuting...",
         'ai_error': "❌ **Xatolik!** AI xizmatlari bilan bog'lanishda muammo yuz berdi.\n\nSababi: {error}",
         'ai_code_found': "✅ **Tayyor kod fayli!**",
@@ -139,7 +161,6 @@ TEXTS = {
         'ai_text_too_long': "⚠️ **Kod juda uzun!** AI bir martada buncha kodni o'qiy olmaydi. Faqat xatolik yuz bergan qismini yuboring.",
         'ai_not_coding': "🤖 Kechirasiz, men faqat dasturlash va kod yozish bo'yicha yordamchiman. Iltimos, menga Python yoki Lua bo'yicha topshiriq bering."
     },
-    # RU, EN, AR qismlari avvalgi kod bilan bir xil
     'ru': {'choose_lang': "👋 **Здравствуйте!**\n\nВыберите язык:", 'welcome': "👋 Я помощник по **Termux**.", 'btn_termux': "📽️ УРОКИ TERMUX", 'btn_lua': "📽️ УРОКИ LUA", 'btn_apk': "📥 СКАЧАТЬ APK", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_quiz': "🧠 Тест", 'btn_support': "✉️ Админу", 'btn_another_tip': "🔄 Ещё", 'btn_security': "🛡️ Безопасность", 'btn_ai': "🤖 AI Программист (Код)", 'btn_change_lang': "🌐 Язык", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️ Назад", 'btn_next': "Вперед ➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚 Меню", 'text_page': "📚 Уроки {page}/5", 'text_lua': "📚 Уроки LUA", 'text_python_done': "Урок Python ✅", 'text_error_vid': "❌ Ошибка видео.", 'text_error_py': "❌ Ошибка Python.", 'tip_header': "💡 **Совет:**\n\n", 'cheatsheet_menu': "📜 Команды", 'cat_files': "📁 Файлы", 'cat_packages': "📦 Пакеты", 'cat_network': "🌐 Сеть", 'cat_system': "⚙️ Система", 'btn_back_cheat': "🔙 Назад", 'apk_caption': "📱 Termux APK", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳ Загрузка...", 'apk_too_big': "⚠️ Файл большой.", 'apk_error': "❌ Ошибка APK.", 'support_prompt': "✉️ Напишите вопрос.", 'support_sent': "✅ Отправлено!", 'support_reply': "📬 Ответ:\n\n", 'quiz_start': "🧠 Тест!", 'quiz_correct': "✅ Верно!", 'quiz_wrong': "❌ Ошибка: **{answer}**", 'btn_next_quiz': "➡️ Далее", 'sec_menu': "🛡️ Безопасность", 'sec_info': "🔍 Инфо", 'sec_pass': "🔑 Пароли", 'sec_exploit': "💥 Уязвимости", 'sec_network': "📡 Сеть", 'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 'admin_bcast_start': "📢 Режим рассылки.", 'admin_bcast_wait': "⏳ Отправка...", 'admin_bcast_done': "✅ Готово! Успех: {success}, Ошибок: {fail}", 'admin_bcast_cancel': "❌ Отменено.", 'ai_prompt': "🤖 **AI Программист (Только Код)**\n\nЯ не веду светские беседы. Дайте мне задачу по программированию!\n\nНапример: \"Напиши калькулятор\" или отправь файл.", 'ai_wait': "🧠 AI работает...", 'ai_error': "❌ Ошибка AI. Причина: {error}", 'ai_code_found': "✅ **Готовый файл кода!**", 'ai_no_code': "🤖 **Ответ AI:**\n\n{text}", 'ai_vision_error': "⚠️ **Внимание:** Не могу прочитать код с картинки.", 'ai_unsupported_file': "⚠️ Только файлы кода (.py, .lua, .txt).", 'ai_video_error': "🎥 **Видео не поддерживается.**", 'ai_file_too_large': "⚠️ **Файл слишком большой (более 500 КБ)!**", 'ai_text_too_long': "⚠️ **Слишком длинный код!**", 'ai_not_coding': "🤖 Извините, я помогаю только с программированием."},
     'en': {'choose_lang': "👋 **Hello!**\n\nSelect language:", 'welcome': "👋 I am your **Termux** assistant.", 'btn_termux': "📽️ TERMUX LESSONS", 'btn_lua': "📽️ LUA LESSONS", 'btn_apk': "📥 DOWNLOAD APK", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_quiz': "🧠 Quiz", 'btn_support': "✉️ Contact Admin", 'btn_another_tip': "🔄 Another", 'btn_security': "🛡️ Security", 'btn_ai': "🤖 AI Coder (Code)", 'btn_change_lang': "🌐 Language", 'btn_back': "🔙 Back", 'btn_prev': "⬅️ Prev", 'btn_next': "Next ➡️", 'btn_python': "🐍 GET PYTHON", 'btn_lessons_menu': "📚 Menu", 'text_page': "📚 Lessons {page}/5", 'text_lua': "📚 LUA Lessons", 'text_python_done': "Python Lesson ✅", 'text_error_vid': "❌ Video error.", 'text_error_py': "❌ Python error.", 'tip_header': "💡 **Tip:**\n\n", 'cheatsheet_menu': "📜 Commands", 'cat_files': "📁 Files", 'cat_packages': "📦 Packages", 'cat_network': "🌐 Network", 'cat_system': "⚙️ System", 'btn_back_cheat': "🔙 Back", 'apk_caption': "📱 Termux APK", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳ Loading...", 'apk_too_big': "⚠️ File too big.", 'apk_error': "❌ APK error.", 'support_prompt': "✉️ Write your question.", 'support_sent': "✅ Sent!", 'support_reply': "📬 Reply:\n\n", 'quiz_start': "🧠 Quiz!", 'quiz_correct': "✅ Correct!", 'quiz_wrong': "❌ Wrong: **{answer}**", 'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️ Security", 'sec_info': "🔍 Info", 'sec_pass': "🔑 Passwords", 'sec_exploit': "💥 Exploits", 'sec_network': "📡 Network", 'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 'admin_bcast_start': "📢 Broadcast mode.", 'admin_bcast_wait': "⏳ Sending...", 'admin_bcast_done': "✅ Done! Success: {success}, Fail: {fail}", 'admin_bcast_cancel': "❌ Cancelled.", 'ai_prompt': "🤖 **AI Coder (Code Only)**\n\nI don't do casual chat. Give me a programming task!\n\nExample: \"Write a calculator\" or send a file.", 'ai_wait': "🧠 AI is working...", 'ai_error': "❌ AI error. Reason: {error}", 'ai_code_found': "✅ **Code file ready!**", 'ai_no_code': "🤖 **AI Response:**\n\n{text}", 'ai_vision_error': "⚠️ **Note:** Could not read code from image.", 'ai_unsupported_file': "⚠️ Please send only code files (.py, .lua, .txt).", 'ai_video_error': "🎥 **Video not supported.**", 'ai_file_too_large': "⚠️ **File is too large (over 500 KB)!**", 'ai_text_too_long': "⚠️ **Text is too long!**", 'ai_not_coding': "🤖 Sorry, I only help with programming."},
     'ar': {'choose_lang': "👋 **مرحباً!**\n\nاختر اللغة:", 'welcome': "👋 أنا مساعد **Termux**.", 'btn_termux': "📽️ دروس TERMUX", 'btn_lua': "📽️ دروس LUA", 'btn_apk': "📥 تحميل APK", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_quiz': "🧠 اختبار", 'btn_support': "✉️ للمسؤول", 'btn_another_tip': "🔄 أخرى", 'btn_security': "🛡️ الأمن", 'btn_ai': "🤖 مبرمج AI (أكواد)", 'btn_change_lang': "🌐 اللغة", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️ السابق", 'btn_next': "التالي ➡️", 'btn_python': "🐍 PYTHON", 'btn_lessons_menu': "📚 القائمة", 'text_page': "📚 دروس {page}/5", 'text_lua': "📚 دروس LUA", 'text_python_done': "درس Python ✅", 'text_error_vid': "❌ خطأ في الفيديو.", 'text_error_py': "❌ خطأ في Python.", 'tip_header': "💡 **نصيحة:**\n\n", 'cheatsheet_menu': "📜 أوامر", 'cat_files': "📁 ملفات", 'cat_packages': "📦 حزم", 'cat_network': "🌐 شبكة", 'cat_system': "⚙️ نظام", 'btn_back_cheat': "🔙 رجوع", 'apk_caption': "📱 Termux APK", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳ جاري التحميل...", 'apk_too_big': "⚠️ الملف كبير.", 'apk_error': "❌ خطأ APK.", 'support_prompt': "✉️ اكتب سؤالك.", 'support_sent': "✅ تم الإرسال!", 'support_reply': "📬 الرد:\n\n", 'quiz_start': "🧠 اختبار!", 'quiz_correct': "✅ صحيح!", 'quiz_wrong': "❌ خطأ: **{answer}**", 'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️ الأمن", 'sec_info': "🔍 معلومات", 'sec_pass': "🔑 كلمات المرور", 'sec_exploit': "💥 ثغرات", 'sec_network': "📡 شبكة", 'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`", 'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`", 'admin_bcast_start': "📢 وضع البث.", 'admin_bcast_wait': "⏳ جاري الإرسال...", 'admin_bcast_done': "✅ تم! النجاح: {success}, الفشل: {fail}", 'admin_bcast_cancel': "❌ تم الإلغاء.", 'ai_prompt': "🤖 **مبرمج AI (أكواد فقط)**\n\nأنا لا أتحدث في مواضيع عامة. أعطني مهمة برمجية!\n\nمثال: \"اكتب آلة حاسبة\" أو أرسل ملفاً.", 'ai_wait': "🧠 AI يعمل...", 'ai_error': "❌ خطأ AI. السبب: {error}", 'ai_code_found': "✅ **ملف الكود جاهز!**", 'ai_no_code': "🤖 **رد AI:**\n\n{text}", 'ai_vision_error': "⚠️ **ملاحظة:** لم أتمكن من قراءة الكود من الصورة.", 'ai_unsupported_file': "⚠️ يرجى إرسال ملفات الكود فقط (.py, .lua, .txt).", 'ai_video_error': "🎥 **الفيديو غير مدعوم.**", 'ai_file_too_large': "⚠️ **الملف كبير جداً (أكثر من 500 كيلوبايت)!**", 'ai_text_too_long': "⚠️ **النص طويل جداً!**", 'ai_not_coding': "🤖 عذراً، أنا أساعد فقط في البرمجة."}
@@ -367,10 +388,10 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
 
 # ==========================================
-# SUPER AI LOGIKASI (FAQAT GROQ VA GEMINI)
+# SUPER AI LOGIKASI (FALLBACK WATERFALL TIZIMI)
 # ==========================================
 async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not groq_client and not gemini_client:
+    if not any([openrouter_client, mistral_client, groq_client, gemini_client]):
         await update.message.reply_text("❌ AI xizmatlari sozlanmagan.")
         return
 
@@ -423,65 +444,106 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         ai_reply = ""
-        error_reason = ""
+        error_logs = []
+        
+        system_prompt = "You are an expert Senior Software Engineer. Your ONLY task is to write, fix, and analyze code. Do NOT engage in casual conversation. Always provide the FULL working code inside markdown blocks (```python ... ``` or ```lua ... ```). Reply in the language the user asked in."
 
         # ==========================================
-        # 1-QADAM: Rasm bo'lsa, Gemini (Vision)
+        # 1-QADAM: Rasm bo'lsa, faqat Gemini (Vision)
         # ==========================================
         if is_image and gemini_client:
             try:
-                response = gemini_client.models.generate_content(
+                response = await gemini_client.aio.models.generate_content(
                     model='gemini-1.5-flash',
                     contents=[
-                        types.Part.from_text(text="You are an expert coder. Look at this image and fix the code error. Provide the full working code."),
+                        types.Part.from_text(text=system_prompt + " Look at this image and fix the code error."),
                         types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
                     ]
                 )
                 ai_reply = response.text
                 logging.info("Rasm muvaffaqiyatli Gemini orqali tahlil qilindi.")
             except Exception as e:
-                error_reason = str(e)
-                logging.error(f"Gemini Vision xatosi (Rasm): {e}")
+                error_logs.append(f"Gemini Vision: {str(e)}")
+                logging.error(f"Gemini Vision xatosi: {e}")
 
         # ==========================================
-        # 2-QADAM: Matn yoki Kod bo'lsa, Groq
+        # 2-QADAM: Matn/Kod bo'lsa -> OpenRouter (Qwen Coder)
         # ==========================================
-        if not ai_reply and groq_client:
+        if not ai_reply and openrouter_client and not is_image:
             try:
-                response = await groq_client.chat.completions.create(
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
+                response = await openrouter_client.chat.completions.create(
+                    model="qwen/qwen-2.5-coder-32b-instruct:free", # Eng kuchli bepul kodlash modeli
                     messages=[
-                        {"role": "system", "content": "You are an expert Senior Software Engineer. Your ONLY task is to write, fix, and analyze code. Do NOT engage in casual conversation. Always provide the FULL working code inside markdown blocks (```python ... ``` or ```lua ... ```)."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_query}
                     ],
                     max_tokens=4000
                 )
                 ai_reply = response.choices[0].message.content
-                logging.info("So'rov muvaffaqiyatli Groq orqali bajarildi.")
+                logging.info("OpenRouter (Qwen Coder) orqali bajarildi.")
             except Exception as e:
-                error_reason = str(e)
-                logging.error(f"Groq xatosi: {e}")
+                error_logs.append(f"OpenRouter: {str(e)}")
+                logging.warning(f"OpenRouter xatosi: {e}")
 
         # ==========================================
-        # 3-QADAM: Agar Groq ishlamasa, matnni Gemini'ga yuboramiz
+        # 3-QADAM: OpenRouter ishlamasa -> Mistral (Codestral)
+        # ==========================================
+        if not ai_reply and mistral_client and not is_image:
+            try:
+                response = await mistral_client.chat.completions.create(
+                    model="codestral-latest", # Mistralning kodlashga ixtisoslashgan modeli
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    max_tokens=4000
+                )
+                ai_reply = response.choices[0].message.content
+                logging.info("Mistral (Codestral) orqali bajarildi.")
+            except Exception as e:
+                error_logs.append(f"Mistral: {str(e)}")
+                logging.warning(f"Mistral xatosi: {e}")
+
+        # ==========================================
+        # 4-QADAM: Ular ishlamasa -> Groq (Llama 3.3)
+        # ==========================================
+        if not ai_reply and groq_client and not is_image:
+            try:
+                response = await groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    max_tokens=4000
+                )
+                ai_reply = response.choices[0].message.content
+                logging.info("Groq orqali bajarildi.")
+            except Exception as e:
+                error_logs.append(f"Groq: {str(e)}")
+                logging.warning(f"Groq xatosi: {e}")
+
+        # ==========================================
+        # 5-QADAM: Zaxira - Gemini (Text)
         # ==========================================
         if not ai_reply and gemini_client and not is_image:
             try:
-                response = gemini_client.models.generate_content(
+                response = await gemini_client.aio.models.generate_content(
                     model='gemini-1.5-flash',
                     contents=user_query
                 )
                 ai_reply = response.text
-                logging.info("Zaxira rejimi: Matn muvaffaqiyatli Gemini orqali bajarildi.")
+                logging.info("Zaxira: Gemini orqali bajarildi.")
             except Exception as e:
-                error_reason = str(e)
-                logging.error(f"Gemini Text xatosi (Zaxira): {e}")
+                error_logs.append(f"Gemini Text: {str(e)}")
+                logging.warning(f"Gemini Text xatosi: {e}")
 
         # ==========================================
-        # AGAR IKKALASI HAM ISHLAMASA
+        # AGAR BARCHASI ISHLAMASA
         # ==========================================
         if not ai_reply:
-            display_error = error_reason if len(error_reason) < 150 else "Server xatosi yoki API limitlari tugagan."
+            logging.error("Barcha AI xizmatlari ishlamadi. Xatolar:\n" + "\n".join(error_logs))
+            display_error = "Barcha AI limitlari band yoki server xatosi. Iltimos 1 daqiqadan so'ng qayta urinib ko'ring."
             await msg.edit_text(t['ai_error'].format(error=display_error))
             return
 
@@ -604,7 +666,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(stats_text, parse_mode='Markdown')
 
 # ==========================================
-# VEB SERVER
+# VEB SERVER VA WEBHOOK
 # ==========================================
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
@@ -621,7 +683,7 @@ async def on_startup():
     await application.initialize()
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Bot, Groq AI va Baza muvaffaqiyatli ishga tushdi!")
+    print(f"✅ Bot, Super AI (Fallback) va Baza muvaffaqiyatli ishga tushdi!")
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -636,7 +698,7 @@ async def telegram_webhook(request: Request):
     return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(): return "<h1 style='color:green;'>Groq AI Bot ishlayapti!</h1>"
+async def read_root(): return "<h1 style='color:green;'>Super AI Bot ishlayapti!</h1>"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
