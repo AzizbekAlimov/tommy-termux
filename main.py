@@ -31,8 +31,8 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 ADMIN_ID = 7383782449
 
 # KANALLAR
-FORCE_SUB_CHANNEL = "@Tommy_cheat"    # Majburiy obuna
-VIDEO_CHANNEL = "@termux_tutoril"     # Videolar
+FORCE_SUB_CHANNEL = "@Tommy_cheat"    # Majburiy obuna kanali
+VIDEO_CHANNEL = "@termux_tutoril"     # Videolar joylashgan kanal
 
 TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_arm64-v8a.apk"
 
@@ -53,10 +53,8 @@ db_pool = None
 # ==========================================
 async def edit_or_send(query, context, text, reply_markup):
     try:
-        # Avval xabarni tahrirlashga urinib ko'ramiz
         await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
     except Exception:
-        # Agar xabar video/rasm bo'lsa, uni o'chirib, yangi xabar yuboramiz
         try:
             await query.message.delete()
         except Exception:
@@ -195,9 +193,11 @@ async def is_subscribed(user_id, context):
         return True
 
 # ==========================================
-# VIDEOLAR ID RATAMLARI
+# VIDEOLAR ID RATAMLARI (46-TA QO'SHILDI)
 # ==========================================
 LESSONS = {i: i+2 for i in range(1, 46)}
+LESSONS[46] = 103  # Yangi 46-darslik IDsi
+
 LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101}
 PYTHON_EXTRA_VIDEOS = [96]
 
@@ -418,7 +418,7 @@ def get_lessons_keyboard(page, lang):
     t = TEXTS[lang]
     keyboard = []
     start_idx = (page - 1) * 10 + 1
-    end_idx = min(page * 10, 45)
+    end_idx = min(page * 10, 46) # 46-TA DARSLIK UCHUN O'ZGARTIRILDI
     row = []
     for i in range(start_idx, end_idx + 1):
         row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lesson_{i}"))
@@ -427,7 +427,7 @@ def get_lessons_keyboard(page, lang):
     if row: keyboard.append(row)
     nav_row = []
     if page > 1: nav_row.append(InlineKeyboardButton(t['btn_prev'], callback_data=f"page_{page-1}"))
-    if end_idx < 45: nav_row.append(InlineKeyboardButton(t['btn_next'], callback_data=f"page_{page+1}"))
+    if end_idx < 46: nav_row.append(InlineKeyboardButton(t['btn_next'], callback_data=f"page_{page+1}")) # 46-TA DARSLIK UCHUN O'ZGARTIRILDI
     if nav_row: keyboard.append(nav_row)
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
