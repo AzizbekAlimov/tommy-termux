@@ -246,7 +246,7 @@ TEXTS = {
         'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
         'btn_termux': "📽️ TERMUX VIDEO DARSLIKLAR", 'btn_lua': "📽️ LUA PAK DARSLIK",
         'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH", 
-        'btn_ai': "🤖 AI Dasturchi (Kod)", 'btn_profile': "👤 Profil",
+        'btn_ai': "🤖 AI Dasturchi (Kod)", 'btn_profile': "👤 Mening profilim",
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
         'btn_change_lang': "🌐 Til", 'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar",
@@ -257,7 +257,6 @@ TEXTS = {
         'force_sub_text': f"⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
 
-        # Challenge texts
         'challenge_menu': "🧩 **Kunlik Dasturlash Masalasi**\n\nQuyidagi masalani yeching va kodni yuboring. To'g'ri yechim uchun **+30 ball** beriladi!\n\n*(Kuniga faqat 1 marta)*",
         'challenge_problem': "📝 **Bugungi masala:**\n\n{text}\n\n💻 *Kodni yozib, shu chatga yuboring:*",
         'challenge_already_done': "✅ Siz bugungi masalani allaqachon yechdingiz. Ertaga yangi masala bilan qaytib keling!",
@@ -266,7 +265,6 @@ TEXTS = {
         'challenge_wrong': "❌ **Xato!**\n\nAI xulosasi:\n{feedback}\n\nIltimos, kodni to'g'rilab qaytadan yuboring.",
         'challenge_no_code': "⚠️ Iltimos, kodni matn ko'rinishida yoki fayl qilib yuboring.",
 
-        # Theme texts
         'theme_menu': "🎨 **Termux Terminal Dizayni**\n\nO'zingizga yoqqan rangni tanlang. Bot sizga tayyor `colors.properties` faylini beradi.",
         'theme_send': "✅ **{theme_name} temasi tayyor!**\n\n**O'rnatish yo'riqnomasi:**\n1. Yuklab olingan `colors.properties` faylini yuboring.\n2. Uni Termux'ning `~/.termux/` papkasiga joylashtiring.\n3. Termux'da `termux-reload-settings` buyrug'ini bering.\n\nMana fayl:",
 
@@ -328,7 +326,7 @@ TEXTS = {
         
         'java_info_text': "☕ **Termux'da Java Dasturlash**\n\nJava — kuchli va keng tarqalgan til. Termux'da buni sozlash juda oson!\n\n**1. Java (JDK) o'rnatish:**\n`pkg install openjdk-17 -y`\n\n**2. Tekshirish:**\n`java -version`\n`javac -version`\n\n**3. Fayl ochish:**\n_(Diqqat: fayl nomi katta harf bilan boshlanadi!)_\n`nano Salom.java`\n\n**4. Ichiga kod yozing:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n_(Saqlash: CTRL+X, keyin Y, keyin Enter)_\n\n**5. Kompilyatsiya qilish va ishga tushirish:**\n`javac Salom.java`\n`java Salom`"
     },
-    # RU, EN, AR (Asosiy tarjimalar, yangi tugmalar bilan)
+    # Qolgan tillar (ru, en, ar)
     'ru': {'choose_lang': "Выберите язык:", 'welcome': "👋 Я помощник **Termux**.", 'btn_termux': "📽️ УРОКИ", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Код", 'btn_profile': "👤 Профиль", 'btn_top': "🏆 Топ 10", 'btn_quiz': "🧠 Тест", 'btn_security': "🛡️ Безопасность", 'btn_support': "✉️ Админу", 'btn_tip': "💡 Совет", 'btn_cheatsheet': "📜 Команды", 'btn_change_lang': "🌐 Язык", 'btn_scripts': "📦 Скрипты", 'btn_files': "🗂 Файлы", 'btn_premium': "💎 Премиум", 'btn_challenge': "🧩 Задача дня", 'btn_theme': "🎨 Тема Termux", 'btn_back': "🔙 Назад", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 ПОЛУЧИТЬ PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Подпишитесь:", 'btn_join': "📢 Подписаться", 'btn_check': "✅ Проверить", 'force_sub_error': "❌ Вы не подписались!", 'challenge_menu': "🧩 **Задача дня**\n\nРешите задачу и отправьте код. За правильный ответ **+30 баллов**!", 'challenge_problem': "📝 **Задача:**\n\n{text}\n\n💻 *Отправьте код:*", 'challenge_already_done': "✅ Вы уже решили задачу сегодня.", 'challenge_wait': "🤖 AI проверяет...", 'challenge_correct': "✅ **Верно!** 🎉\n\nВам начислено **+30 баллов**!", 'challenge_wrong': "❌ **Ошибка!**\n\n{feedback}\n\nИсправьте код и отправьте снова.", 'challenge_no_code': "⚠️ Отправьте код текстом или файлом.", 'theme_menu': "🎨 **Темы Termux**\n\nВыберите цвет. Бот пришлет файл `colors.properties`.", 'theme_send': "✅ **Тема {theme_name} готова!**\n\nИнструкция: переместите файл в `~/.termux/` и введите `termux-reload-settings`.", 'script_cat_menu': "📦 **Генератор**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Создать", 'btn_clear_scripts': "🗑 Очистить", 'btn_back_to_cats': "🔙 Назад", 'script_empty': "⚠️ Выберите программу!", 'script_done': "✅ Готово!", 'files_menu': "🗂 **Файлы**", 'files_empty': "Нет файлов.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Только для Премиум!", 'premium_menu': "💎 **Премиум**\n\n50 Stars за 1 месяц.", 'btn_buy_premium': "⭐️ Купить за 50 Stars", 'premium_success': "🎉 Вы Премиум!", 'ai_limit_reached': "⚠️ Лимит (5/день). Купите Премиум.", 'btn_go_premium': "💎 Купить", 'admin_panel': "👑 **Панель Админа**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Файл", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Баллы:", 'admin_points_wait': "⏳ Рассылка...", 'admin_points_done': "✅ Добавлено {points}!\n📩 Отправлено: {success}\n❌ Ошибок: {fail}", 'admin_file_wait': "📂 Отправьте файл:", 'admin_file_title': "✍️ Название:", 'admin_file_saved': "✅ Сохранено!", 'admin_file_cancel': "❌ Отменено.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Ошибка! Видео не найдено.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Профиль**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Бонус (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Завтра!", 'top_text': "🏆 **Топ 10:**\n{list}", 'quiz_start': "🧠 **Тест!** +10 очков.\n\n❓ *Вопрос:*", 'quiz_correct': "✅ **Верно!** (+10)", 'quiz_wrong': "❌ **Ошибка!** Ответ: **{answer}**", 'quiz_end': "🎉 Вы ответили на все вопросы! Начинаем заново.", 'btn_next_quiz': "➡️ Следующий", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Лимит: {limit}", 'java_info_text': "☕ **Java в Termux**\n\n1. Установка: `pkg install openjdk-17 -y`\n2. Создание: `nano Salom.java`\n3. Код: `public class Salom { ... }`\n4. Запуск: `javac Salom.java` и `java Salom`"},
     'en': {'choose_lang': "Select language:", 'welcome': "👋 **Termux** assistant.", 'btn_termux': "📽️ LESSONS", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI Code", 'btn_profile': "👤 Profile", 'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Quiz", 'btn_security': "🛡️ Security", 'btn_support': "✉️ Admin", 'btn_tip': "💡 Tip", 'btn_cheatsheet': "📜 Commands", 'btn_change_lang': "🌐 Language", 'btn_scripts': "📦 Scripts", 'btn_files': "🗂 File Center", 'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Daily Challenge", 'btn_theme': "🎨 Termux Theme", 'btn_back': "🔙 Back", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 GET PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ Join our channel:", 'btn_join': "📢 Join", 'btn_check': "✅ Check", 'force_sub_error': "❌ You haven't joined!", 'challenge_menu': "🧩 **Daily Challenge**\n\nSolve the problem and submit code. Correct answer gets **+30 points**!", 'challenge_problem': "📝 **Problem:**\n\n{text}\n\n💻 *Send your code:*", 'challenge_already_done': "✅ You already solved today's challenge.", 'challenge_wait': "🤖 AI is checking...", 'challenge_correct': "✅ **Correct!** 🎉\n\nYou earned **+30 points**!", 'challenge_wrong': "❌ **Wrong!**\n\n{feedback}\n\nFix the code and send again.", 'challenge_no_code': "⚠️ Send code as text or file.", 'theme_menu': "🎨 **Termux Themes**\n\nSelect a color. Bot sends `colors.properties`.", 'theme_send': "✅ **Theme {theme_name} ready!**\n\nInstructions: move file to `~/.termux/` and run `termux-reload-settings`.", 'script_cat_menu': "📦 **Script Generator**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 Generate", 'btn_clear_scripts': "🗑 Clear", 'btn_back_to_cats': "🔙 Back", 'script_empty': "⚠️ Select at least one!", 'script_done': "✅ Done!", 'files_menu': "🗂 **File Center**", 'files_empty': "No files yet.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 Premium only!", 'premium_menu': "💎 **Premium**\n\n50 Stars for 1 month.", 'btn_buy_premium': "⭐️ Buy for 50 Stars", 'premium_success': "🎉 You are Premium!", 'ai_limit_reached': "⚠️ Limit reached (5/day). Buy Premium.", 'btn_go_premium': "💎 Go Premium", 'admin_panel': "👑 **Admin Panel**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ Add File", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 Points to add:", 'admin_points_wait': "⏳ Sending...", 'admin_points_done': "✅ Added {points}!\n📩 Sent: {success}\n❌ Failed: {fail}", 'admin_file_wait': "📂 Send file:", 'admin_file_title': "✍️ File title:", 'admin_file_saved': "✅ Saved!", 'admin_file_cancel': "❌ Cancelled.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ Error! Video not found.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **Profile**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 Bonus (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Tomorrow!", 'top_text': "🏆 **Top 10:**\n{list}", 'quiz_start': "🧠 **Quiz!** +10 points.\n\n❓ *Question:*", 'quiz_correct': "✅ **Correct!** (+10)", 'quiz_wrong': "❌ **Wrong!** Answer: **{answer}**", 'quiz_end': "🎉 You've answered all questions! Starting over.", 'btn_next_quiz': "➡️ Next", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ Remaining: {limit}", 'java_info_text': "☕ **Java in Termux**\n\n1. Install: `pkg install openjdk-17 -y`\n2. Create: `nano Salom.java`\n3. Code: `public class Salom { ... }`\n4. Run: `javac Salom.java` and `java Salom`"},
     'ar': {'choose_lang': "اختر اللغة:", 'welcome': "👋 مساعد **Termux**.", 'btn_termux': "📽️ دروس", 'btn_lua': "📽️ LUA", 'btn_java': "☕ JAVA", 'btn_apk': "📥 APK", 'btn_ai': "🤖 AI", 'btn_profile': "👤 الملف", 'btn_top': "🏆 أفضل 10", 'btn_quiz': "🧠 اختبار", 'btn_security': "🛡️ الأمن", 'btn_support': "✉️ المسؤول", 'btn_tip': "💡 نصيحة", 'btn_cheatsheet': "📜 أوامر", 'btn_change_lang': "🌐 اللغة", 'btn_scripts': "📦 سكريبتات", 'btn_files': "🗂 الملفات", 'btn_premium': "💎 بريميوم", 'btn_challenge': "🧩 تحدي يومي", 'btn_theme': "🎨 ثيم Termux", 'btn_back': "🔙 رجوع", 'btn_prev': "⬅️", 'btn_next': "➡️", 'btn_python': "🐍 الحصول على PYTHON", 'btn_lessons_menu': "📚", 'btn_back_cheat': "🔙", 'force_sub_text': "⚠️ انضم إلى قناتنا:", 'btn_join': "📢 انضم", 'btn_check': "✅ تحقق", 'force_sub_error': "❌ لم تنضم بعد!", 'challenge_menu': "🧩 **تحدي يومي**\n\nحل المشكلة وأرسل الكود. الإجابة الصحيحة تعطيك **+30 نقطة**!", 'challenge_problem': "📝 **المشكلة:**\n\n{text}\n\n💻 *أرسل الكود:*", 'challenge_already_done': "✅ لقد قمت بحل التحدي اليوم بالفعل.", 'challenge_wait': "🤖 AI يتحقق...", 'challenge_correct': "✅ **صحيح!** 🎉\n\nلقد حصلت على **+30 نقطة**!", 'challenge_wrong': "❌ **خطأ!**\n\n{feedback}\n\nصحح الكود وأرسله مرة أخرى.", 'challenge_no_code': "⚠️ أرسل الكود كنص أو ملف.", 'theme_menu': "🎨 **ثيمات Termux**\n\nاختر لوناً. سيرسل البوت ملف `colors.properties`.", 'theme_send': "✅ **الثيم {theme_name} جاهز!**\n\nالتعليمات: انقل الملف إلى `~/.termux/` ثم اكتب `termux-reload-settings`.", 'script_cat_menu': "📦 **مولد**", 'script_items_menu': "⚙️ **{cat_name}**", 'btn_generate_script': "🚀 إنشاء", 'btn_clear_scripts': "🗑 مسح", 'btn_back_to_cats': "🔙 رجوع", 'script_empty': "⚠️ اختر برنامجاً!", 'script_done': "✅ جاهز!", 'files_menu': "🗂 **الملفات**", 'files_empty': "لا توجد ملفات.", 'file_sending': "⏳...", 'file_premium_locked': "🔒 بريميوم فقط!", 'premium_menu': "💎 **بريميوم**\n\n50 نجمة لمدة شهر.", 'btn_buy_premium': "⭐️ شراء بـ 50 نجمة", 'premium_success': "🎉 أنت بريميوم!", 'ai_limit_reached': "⚠️ الحد (5/يوم). اشتري بريميوم.", 'btn_go_premium': "💎 اشتري", 'admin_panel': "👑 **لوحة المسؤول**", 'admin_btn_stats': "📊", 'admin_btn_bcast': "📢", 'admin_btn_points': "🎁", 'admin_btn_add_file': "➕ ملف", 'admin_btn_close': "❌", 'admin_points_prompt': "🎁 نقاط:", 'admin_points_wait': "⏳ جاري الإرسال...", 'admin_points_done': "✅ أضيفت {points}!\n📩 المرسل: {success}\n❌ الفشل: {fail}", 'admin_file_wait': "📂 أرسل ملفاً:", 'admin_file_title': "✍️ اسم الملف:", 'admin_file_saved': "✅ تم الحفظ!", 'admin_file_cancel': "❌ ملغي.", 'text_page': "📚 {page}/5", 'text_lua': "📚 LUA", 'text_python_done': "✅", 'text_error_vid': "❌ خطأ! الفيديو غير موجود.", 'tip_header': "💡", 'cheatsheet_menu': "📜", 'cat_files': "📁", 'cat_packages': "📦", 'cat_network': "🌐", 'cat_system': "⚙️", 'apk_caption': "📱", 'apk_file_name': "T.apk", 'apk_loading': "⏳", 'apk_too_big': "⚠️", 'apk_error': "❌", 'support_prompt': "✉️", 'support_sent': "✅", 'support_reply': "📬", 'profile_text': "👤 **الملف**\n⭐ {score}\n🏅 {level}\n📊 #{rank}\n💎 {status}", 'btn_daily_bonus': "🎁 مكافأة (+20)", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ غداً!", 'top_text': "🏆 **أفضل 10:**\n{list}", 'quiz_start': "🧠 **اختبار!** +10 نقاط.\n\n❓ *سؤال:*", 'quiz_correct': "✅ **صحيح!** (+10)", 'quiz_wrong': "❌ **خطأ!** الجواب: **{answer}**", 'quiz_end': "🎉 أجبت على جميع الأسئلة! نبدأ من جديد.", 'btn_next_quiz': "➡️ التالي", 'sec_menu': "🛡️", 'sec_info': "🔍", 'sec_pass': "🔑", 'sec_exploit': "💥", 'sec_network': "📡", 'sec_info_text': "Nmap", 'sec_pass_text': "Hydra", 'sec_exploit_text': "SQLmap", 'sec_network_text': "Tshark", 'admin_bcast_start': "📢", 'admin_bcast_wait': "⏳", 'admin_bcast_done': "✅ {success}, {fail}", 'admin_bcast_cancel': "❌", 'ai_prompt': "🤖 AI", 'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅", 'ai_no_code': "🤖 {text}", 'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️", 'ai_video_error': "🎥", 'ai_file_too_large': "⚠️", 'ai_text_too_long': "⚠️", 'ai_not_coding': "🤖", 'ai_limit_info': "ℹ️ المتبقي: {limit}", 'java_info_text': "☕ **Java في Termux**\n\n1. التثبيت: `pkg install openjdk-17 -y`\n2. إنشاء: `nano Salom.java`\n3. الكود: `public class Salom { ... }`\n4. التشغيل: `javac Salom.java` و `java Salom`"}
@@ -369,7 +367,7 @@ QUIZ_DATA = [
 ]
 
 # ==========================================
-# KLAVIATURALAR
+# KLAVIATURALAR (KETMA-KET TARTIBDA)
 # ==========================================
 def get_lang_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")], [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")]])
@@ -377,15 +375,25 @@ def get_lang_keyboard():
 def get_main_menu(lang):
     t = TEXTS[lang]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
-        [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")], # YANGI TUGMALAR
-        [InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu"), InlineKeyboardButton(t['btn_files'], callback_data="files_menu")],
-        [InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu"), InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
-        [InlineKeyboardButton(t['btn_top'], callback_data="top_users"), InlineKeyboardButton(t['btn_profile'], callback_data="my_profile")],
-        [InlineKeyboardButton(t['btn_apk'], callback_data="send_apk"), InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet")],
-        [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
-        [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
+        [InlineKeyboardButton(t['btn_termux'], callback_data="page_1")],
+        [InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
+        [InlineKeyboardButton(t['btn_security'], callback_data="sec_start")],
+        [InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
+        [InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
+        [InlineKeyboardButton(t['btn_files'], callback_data="files_menu")],
+        [InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
+        [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet")],
+        [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")],
+        [InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
+        [InlineKeyboardButton(t['btn_java'], callback_data="java_info")],
+        [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start")],
+        [InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
+        [InlineKeyboardButton(t['btn_top'], callback_data="top_users")],
+        [InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
+        [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile")],
+        [InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
+        [InlineKeyboardButton(t['btn_support'], callback_data="support_start")],
+        [InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")]
     ])
 
 def get_theme_keyboard(lang):
@@ -614,9 +622,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logging.error(f"To'lov yuborishda xatolik: {e}")
             await query.answer("❌ To'lov tizimida xatolik! Iltimos BotFather orqali Stars to'lovini yoqing.", show_alert=True)
 
-    # ==========================================
-    # KUNLIK MASALA (CHALLENGE)
-    # ==========================================
     elif data == "challenge_start":
         profile = await get_user_profile(user_id)
         today = datetime.date.today()
@@ -633,9 +638,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await edit_or_send(query, context, text, keyboard)
 
-    # ==========================================
-    # TERMUX TEMALARI
-    # ==========================================
     elif data == "theme_menu":
         await edit_or_send(query, context, t['theme_menu'], get_theme_keyboard(lang))
 
@@ -670,7 +672,6 @@ color15=#ffffff
         text = t['theme_send'].format(theme_name=theme['name'])
         await context.bot.send_document(chat_id=chat_id, document=prop_file, caption=text, parse_mode='Markdown')
 
-    # JAVA MENYUSI
     elif data == "java_info":
         await edit_or_send(query, context, t['java_info_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
 
@@ -986,7 +987,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await msg.edit_text(t['ai_video_error']); return
 
         ai_reply, error_logs = "", []
-        system_prompt = "You are an expert Senior Software Engineer. Your ONLY task is to write, fix, and analyze code. Do NOT engage in casual conversation. Always provide the FULL working code inside markdown blocks (```python ... ``` or ```lua ... ```). Reply in the language the user asked in."
+        system_prompt = "You are an expert Senior Software Engineer. Your ONLY task is to write, fix, and analyze code. Do NOT engage in casual conversation. Always provide the FULL working code inside markdown blocks (```python ... ``` or ```lua ... ``` or ```java ... ```). Reply in the language the user asked in."
 
         if is_image and gemini_client:
             try:
