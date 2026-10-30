@@ -8,7 +8,7 @@ import asyncpg
 import base64
 from io import BytesIO
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
@@ -27,8 +27,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # AI API KALITLARI
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") # YANGI
-MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")       # YANGI
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 
 ADMIN_ID = 7383782449
 CHANNEL_USERNAME = "@Tommy_cheat" 
@@ -39,28 +39,24 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # ==========================================
 # AI MIJOZLARI
 # ==========================================
-# 1. OpenRouter (Qwen Coder - Eng yaxshi bepul kodlash AI)
 openrouter_client = AsyncOpenAI(
     api_key=OPENROUTER_API_KEY,
     base_url="https://openrouter.ai/api/v1",
     timeout=300.0
 ) if OPENROUTER_API_KEY else None
 
-# 2. Mistral (Codestral - Kodlashga ixtisoslashgan)
 mistral_client = AsyncOpenAI(
     api_key=MISTRAL_API_KEY,
     base_url="https://api.mistral.ai/v1",
     timeout=300.0
 ) if MISTRAL_API_KEY else None
 
-# 3. Groq (Tezkor Llama 3.3)
 groq_client = AsyncOpenAI(
     api_key=GROQ_API_KEY, 
     base_url="https://api.groq.com/openai/v1",
     timeout=300.0 
 ) if GROQ_API_KEY else None
 
-# 4. Gemini (Rasm va zaxira uchun)
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 db_pool = None
@@ -404,7 +400,6 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image_bytes = None
         is_image = False
 
-        # 1. Matnni tekshirish
         if update.message.text:
             user_query = update.message.text
             if len(user_query) < 15 and user_query.lower() in ['salom', 'assalom', 'qalesan', 'nima gap', 'qalaysan', 'hi', 'hello']:
@@ -413,13 +408,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(user_query) > 80000:
                 await msg.edit_text(t['ai_text_too_long'])
                 return
-        # 2. Rasmni tekshirish
         elif update.message.photo:
             photo_file = await update.message.photo[-1].get_file()
             image_bytes = await photo_file.download_as_bytearray()
             is_image = True
             user_query = "Iltimos, ushbu rasmdagi kod yoki xatoni tahlil qilib, tuzatilgan kodni yozib ber."
-        # 3. Faylni tekshirish
         elif update.message.document:
             doc = update.message.document
             if doc.file_size > 500 * 1024:
@@ -448,9 +441,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         system_prompt = "You are an expert Senior Software Engineer. Your ONLY task is to write, fix, and analyze code. Do NOT engage in casual conversation. Always provide the FULL working code inside markdown blocks (```python ... ``` or ```lua ... ```). Reply in the language the user asked in."
 
-        # ==========================================
-        # 1-QADAM: Rasm bo'lsa, faqat Gemini (Vision)
-        # ==========================================
+        # 1-QADAM: Rasm (Gemini)
         if is_image and gemini_client:
             try:
                 response = await gemini_client.aio.models.generate_content(
@@ -466,13 +457,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error_logs.append(f"Gemini Vision: {str(e)}")
                 logging.error(f"Gemini Vision xatosi: {e}")
 
-        # ==========================================
-        # 2-QADAM: Matn/Kod bo'lsa -> OpenRouter (Qwen Coder)
-        # ==========================================
+        # 2-QADAM: OpenRouter (Qwen Coder)
         if not ai_reply and openrouter_client and not is_image:
             try:
                 response = await openrouter_client.chat.completions.create(
-                    model="qwen/qwen-2.5-coder-32b-instruct:free", # Eng kuchli bepul kodlash modeli
+                    model="qwen/qwen-2.5-coder-32b-instruct:free", 
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_query}
@@ -485,13 +474,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error_logs.append(f"OpenRouter: {str(e)}")
                 logging.warning(f"OpenRouter xatosi: {e}")
 
-        # ==========================================
-        # 3-QADAM: OpenRouter ishlamasa -> Mistral (Codestral)
-        # ==========================================
+        # 3-QADAM: Mistral (Codestral)
         if not ai_reply and mistral_client and not is_image:
             try:
                 response = await mistral_client.chat.completions.create(
-                    model="codestral-latest", # Mistralning kodlashga ixtisoslashgan modeli
+                    model="codestral-latest", 
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_query}
@@ -504,9 +491,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error_logs.append(f"Mistral: {str(e)}")
                 logging.warning(f"Mistral xatosi: {e}")
 
-        # ==========================================
-        # 4-QADAM: Ular ishlamasa -> Groq (Llama 3.3)
-        # ==========================================
+        # 4-QADAM: Groq (Llama 3.3)
         if not ai_reply and groq_client and not is_image:
             try:
                 response = await groq_client.chat.completions.create(
@@ -523,9 +508,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error_logs.append(f"Groq: {str(e)}")
                 logging.warning(f"Groq xatosi: {e}")
 
-        # ==========================================
         # 5-QADAM: Zaxira - Gemini (Text)
-        # ==========================================
         if not ai_reply and gemini_client and not is_image:
             try:
                 response = await gemini_client.aio.models.generate_content(
@@ -538,21 +521,16 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error_logs.append(f"Gemini Text: {str(e)}")
                 logging.warning(f"Gemini Text xatosi: {e}")
 
-        # ==========================================
-        # AGAR BARCHASI ISHLAMASA
-        # ==========================================
         if not ai_reply:
             logging.error("Barcha AI xizmatlari ishlamadi. Xatolar:\n" + "\n".join(error_logs))
             display_error = "Barcha AI limitlari band yoki server xatosi. Iltimos 1 daqiqadan so'ng qayta urinib ko'ring."
             await msg.edit_text(t['ai_error'].format(error=display_error))
             return
 
-        # Kod blokini qidirish
         code_match = re.search(r'```(?:python|py|lua|javascript|js|cpp|c)?\s*(.*?)```', ai_reply, re.DOTALL | re.IGNORECASE)
         
         if code_match:
             code_text = code_match.group(1).strip()
-            # Fayl nomini aniqlash
             if "lua" in user_query.lower() or (update.message.document and update.message.document.file_name.endswith('.lua')):
                 filename = "code.lua"
                 lang_name = "Lua"
@@ -563,7 +541,6 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             code_file = BytesIO(code_text.encode('utf-8'))
             code_file.name = filename
             
-            # Kodni fayl qilib yuborish
             await context.bot.send_document(
                 chat_id=update.message.chat_id,
                 document=code_file,
@@ -666,7 +643,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(stats_text, parse_mode='Markdown')
 
 # ==========================================
-# VEB SERVER VA WEBHOOK
+# VEB SERVER VA WEBHOOK (FASTAPI)
 # ==========================================
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
@@ -698,7 +675,9 @@ async def telegram_webhook(request: Request):
     return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(): return "<h1 style='color:green;'>Super AI Bot ishlayapti!</h1>"
+async def read_root(): 
+    # Bu qator brauzerda index.html faylini ochadi
+    return FileResponse("index.html")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
