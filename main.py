@@ -271,6 +271,7 @@ async def is_subscribed(user_id, context):
 # ==========================================
 LESSONS = {i: i+2 for i in range(1, 46)}
 LESSONS[46] = 103
+LESSONS[47] = 107
 LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101, 8: 104}
 PYTHON_EXTRA_VIDEOS = [106]
 
@@ -606,7 +607,7 @@ def get_lessons_keyboard(page, lang):
     t = TEXTS[lang]
     keyboard = []
     start_idx = (page - 1) * 10 + 1
-    end_idx = min(page * 10, 46)
+    end_idx = min(page * 10, 47)
     row = []
     for i in range(start_idx, end_idx + 1):
         row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lesson_{i}"))
@@ -615,7 +616,8 @@ def get_lessons_keyboard(page, lang):
     if row: keyboard.append(row)
     nav_row = []
     if page > 1: nav_row.append(InlineKeyboardButton(t['btn_prev'], callback_data=f"page_{page-1}"))
-    if end_idx < 46: nav_row.append(InlineKeyboardButton(t['btn_next'], callback_data=f"page_{page+1}"))
+    if end_idx < 47:
+        nav_row.append(InlineKeyboardButton(t['btn_next'], callback_data=f"page_{page+1}"))
     if nav_row: keyboard.append(nav_row)
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
@@ -623,7 +625,6 @@ def get_lessons_keyboard(page, lang):
 def get_lua_lessons_keyboard(lang):
     t = TEXTS[lang]
     keyboard, row = [], []
-    # 8 ta darslik (1 dan 8 gacha)
     for i in range(1, 9):
         row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lua_lesson_{i}"))
         if len(row) == 2:
@@ -1008,7 +1009,6 @@ color15=#ffffff
         lesson_num = int(data.split("_")[2])
         message_id = LUA_LESSONS.get(lesson_num, 93)
         buttons = []
-        # 🐍 Python olish tugmasi 8-darslikdan keyin chiqadi
         if lesson_num == 8:
             buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
         buttons.append([InlineKeyboardButton(t['btn_lessons_menu'], callback_data="lua_page_1")])
