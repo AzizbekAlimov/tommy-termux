@@ -271,8 +271,8 @@ async def is_subscribed(user_id, context):
 # ==========================================
 LESSONS = {i: i+2 for i in range(1, 46)}
 LESSONS[46] = 103
-LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101}
-PYTHON_EXTRA_VIDEOS = [96]
+LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101, 8: 104}
+PYTHON_EXTRA_VIDEOS = [106]
 
 # ==========================================
 # KUNLIK MASALALAR VA TEMALAR
@@ -376,7 +376,7 @@ TEXTS = {
         'quiz_start': "🧠 **Test boshlandi!** To'g'ri javob uchun **+10 ball**.\n\n❓ *Savol:*",
         'quiz_correct': "✅ **To'g'ri javob!** 🎉 (+10 ball)",
         'quiz_wrong': "❌ **Xato!** To'g'ri javob: **{answer}**",
-        'quiz_end': "🎉 **Barcha savollarni yechdingiz!**\n\nYangi savollar qo'shildi, yana urinib ko'rishingiz mumkin.",
+        'quiz_end': "🎉 **Barcha savollarni yechdingiz!**\n\nYangi savollar qo'shildi, yana urinib ko'rishishingiz mumkin.",
         'btn_next_quiz': "➡️ Keyingi savol",
 
         'sec_menu': "🛡️ **Kiberxavfsizlik Asboblari**\n\n⚠️ Faqat o'z tizimlaringizni tekshirish uchun!",
@@ -623,7 +623,8 @@ def get_lessons_keyboard(page, lang):
 def get_lua_lessons_keyboard(lang):
     t = TEXTS[lang]
     keyboard, row = [], []
-    for i in range(1, 8):
+    # 8 ta darslik (1 dan 8 gacha)
+    for i in range(1, 9):
         row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lua_lesson_{i}"))
         if len(row) == 2:
             keyboard.append(row); row = []
@@ -1007,11 +1008,18 @@ color15=#ffffff
         lesson_num = int(data.split("_")[2])
         message_id = LUA_LESSONS.get(lesson_num, 93)
         buttons = []
-        if lesson_num == 2: buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
+        # 🐍 Python olish tugmasi 8-darslikdan keyin chiqadi
+        if lesson_num == 8:
+            buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
         buttons.append([InlineKeyboardButton(t['btn_lessons_menu'], callback_data="lua_page_1")])
         video_keyboard = InlineKeyboardMarkup(buttons)
         try:
-            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=video_keyboard)
+            await context.bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=VIDEO_CHANNEL,
+                message_id=message_id,
+                reply_markup=video_keyboard
+            )
             await query.message.delete()
         except TelegramError as e:
             logging.error(f"Lua video xatosi (ID: {message_id}): {e}")
