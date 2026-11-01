@@ -42,6 +42,7 @@ ADMIN_ID = 7383782449
 FORCE_SUB_CHANNEL = "@Tommy_cheat"
 VIDEO_CHANNEL = "@termux_tutoril"
 TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_arm64-v8a.apk"
+FILES_PER_PAGE = 8
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -81,6 +82,34 @@ def get_file_button_info(file_name, file_type):
     elif file_type == 'photo': return "🖼 RASMNI OLISH"
     return "📥 FAYLNI OLISH"
 
+def file_type_icon(ftype):
+    return {'document': '📄', 'video': '🎬', 'photo': '🖼', 'audio': '🎵', 'voice': '🎙', 'animation': '🎞'}.get(ftype, '📎')
+
+async def safe_send_file(context, chat_id, file_data, reply_markup=None):
+    """Faylni xavfsiz yuborish — barcha turlarni qo'llab-quvvatlaydi"""
+    ftype = file_data['file_type']
+    fid = file_data['file_id']
+    title = file_data['title']
+    try:
+        if ftype == 'document':
+            await context.bot.send_document(chat_id=chat_id, document=fid, caption=f"📄 **{title}**", parse_mode='Markdown', reply_markup=reply_markup)
+        elif ftype == 'video':
+            await context.bot.send_video(chat_id=chat_id, video=fid, caption=f"🎬 **{title}**", parse_mode='Markdown', reply_markup=reply_markup)
+        elif ftype == 'photo':
+            await context.bot.send_photo(chat_id=chat_id, photo=fid, caption=f"🖼 **{title}**", parse_mode='Markdown', reply_markup=reply_markup)
+        elif ftype == 'audio':
+            await context.bot.send_audio(chat_id=chat_id, audio=fid, caption=f"🎵 **{title}**", parse_mode='Markdown', reply_markup=reply_markup)
+        elif ftype == 'voice':
+            await context.bot.send_voice(chat_id=chat_id, voice=fid, reply_markup=reply_markup)
+        elif ftype == 'animation':
+            await context.bot.send_animation(chat_id=chat_id, animation=fid, caption=f"🎞 **{title}**", parse_mode='Markdown', reply_markup=reply_markup)
+        else:
+            await context.bot.send_document(chat_id=chat_id, document=fid, caption=f"📄 **{title}**", parse_mode='Markdown', reply_markup=reply_markup)
+        return True, None
+    except Exception as e:
+        logging.error(f"Fayl yuborishda xato [{ftype}]: {e}")
+        return False, str(e)
+
 # ==========================================
 # BAZA
 # ==========================================
@@ -88,7 +117,7 @@ async def init_db():
     global db_pool
     if not DATABASE_URL: return
     try:
-        db_pool = await asyncpg.create_pool(DATABASE_URL)
+        db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
         async with db_pool.acquire() as conn:
             await conn.execute('''CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY, lang VARCHAR(5) DEFAULT 'uz',
@@ -129,7 +158,10 @@ async def init_db():
                 button_text VARCHAR(100) DEFAULT '📥 DASTURNI OLISH',
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
+            await conn.execute('CREATE INDEX IF NOT EXISTS idx_files_category ON files(category_id)')
+            await conn.execute('CREATE INDEX IF NOT EXISTS idx_files_title ON files(title)')
         await ensure_default_categories()
+        logging.info("✅ Baza tayyor")
     except Exception as e:
         logging.error(f"Baza xatosi: {e}")
 
@@ -202,10 +234,23 @@ async def get_top_users():
     async with db_pool.acquire() as conn:
         return await conn.fetch('SELECT user_id, score FROM users ORDER BY score DESC LIMIT 10')
 
+# ============ FILES — YANGI KUCHLI FUNKSIYALAR ============
 async def get_all_categories():
     if not db_pool: return []
     async with db_pool.acquire() as conn:
         return await conn.fetch('SELECT id, name, icon FROM file_categories ORDER BY id ASC')
+
+async def get_categories_with_counts():
+    """Har papkadagi fayllar soni bilan"""
+    if not db_pool: return []
+    async with db_pool.acquire() as conn:
+        return await conn.fetch('''
+            SELECT c.id, c.name, c.icon, COUNT(f.id) AS file_count
+            FROM file_categories c
+            LEFT JOIN files f ON f.category_id = c.id
+            GROUP BY c.id, c.name, c.icon
+            ORDER BY c.id ASC
+        ''')
 
 async def get_category_by_name(name):
     if not db_pool: return None
@@ -225,16 +270,41 @@ async def get_category_by_id(cat_id):
     async with db_pool.acquire() as conn:
         return await conn.fetchrow('SELECT id, name, icon FROM file_categories WHERE id = $1', cat_id)
 
+async def get_files_by_category_paginated(cat_id, page=0, per_page=FILES_PER_PAGE):
+    if not db_pool: return []
+    offset = page * per_page
+    async with db_pool.acquire() as conn:
+        return await conn.fetch('''SELECT id, title, is_premium, file_type
+            FROM files WHERE category_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3''',
+            cat_id, per_page, offset)
+
 async def get_files_by_category(cat_id):
+    """Eski compatibility uchun — barcha fayllar"""
     if not db_pool: return []
     async with db_pool.acquire() as conn:
         return await conn.fetch('SELECT id, title, is_premium, file_type FROM files WHERE category_id = $1 ORDER BY id DESC', cat_id)
 
-async def add_file_db_cat(title, file_id, file_type, category_id, is_premium=False):
-    if not db_pool: return
+async def count_files_in_category(cat_id):
+    if not db_pool: return 0
     async with db_pool.acquire() as conn:
-        await conn.execute('INSERT INTO files (title, file_id, file_type, category_id, is_premium) VALUES ($1, $2, $3, $4, $5)',
-                          title, file_id, file_type, category_id, is_premium)
+        return await conn.fetchval('SELECT COUNT(*) FROM files WHERE category_id = $1', cat_id) or 0
+
+async def count_all_files():
+    if not db_pool: return 0
+    async with db_pool.acquire() as conn:
+        return await conn.fetchval('SELECT COUNT(*) FROM files') or 0
+
+async def count_all_categories():
+    if not db_pool: return 0
+    async with db_pool.acquire() as conn:
+        return await conn.fetchval('SELECT COUNT(*) FROM file_categories') or 0
+
+async def add_file_db_cat(title, file_id, file_type, category_id, is_premium=False):
+    if not db_pool: return None
+    async with db_pool.acquire() as conn:
+        return await conn.fetchval('''INSERT INTO files (title, file_id, file_type, category_id, is_premium)
+            VALUES ($1, $2, $3, $4, $5) RETURNING id''',
+            title, file_id, file_type, category_id, is_premium)
 
 async def delete_category(cat_id):
     if not db_pool: return
@@ -252,10 +322,34 @@ async def get_file_by_id(file_id):
     async with db_pool.acquire() as conn:
         return await conn.fetchrow('SELECT * FROM files WHERE id = $1', file_id)
 
-async def count_files_in_category(cat_id):
-    if not db_pool: return 0
+async def search_files(query):
+    if not db_pool: return []
     async with db_pool.acquire() as conn:
-        return await conn.fetchval('SELECT COUNT(*) FROM files WHERE category_id = $1', cat_id) or 0
+        return await conn.fetch('''SELECT f.id, f.title, f.is_premium, f.file_type, c.name AS cat_name, c.icon AS cat_icon
+            FROM files f LEFT JOIN file_categories c ON f.category_id = c.id
+            WHERE f.title ILIKE $1 ORDER BY f.id DESC LIMIT 30''', f'%{query}%')
+
+async def get_recent_files(limit=10):
+    if not db_pool: return []
+    async with db_pool.acquire() as conn:
+        return await conn.fetch('''SELECT f.id, f.title, f.is_premium, f.file_type, c.name AS cat_name, c.icon AS cat_icon
+            FROM files f LEFT JOIN file_categories c ON f.category_id = c.id
+            ORDER BY f.id DESC LIMIT $1''', limit)
+
+async def update_file_title(file_id, new_title):
+    if not db_pool: return
+    async with db_pool.acquire() as conn:
+        await conn.execute('UPDATE files SET title = $1 WHERE id = $2', new_title, file_id)
+
+async def move_file_to_category(file_id, new_cat_id):
+    if not db_pool: return
+    async with db_pool.acquire() as conn:
+        await conn.execute('UPDATE files SET category_id = $1 WHERE id = $2', new_cat_id, file_id)
+
+async def toggle_file_premium(file_id):
+    if not db_pool: return
+    async with db_pool.acquire() as conn:
+        await conn.execute('UPDATE files SET is_premium = NOT is_premium WHERE id = $1', file_id)
 
 async def get_setting(key, default=None):
     if not db_pool: return default
@@ -383,13 +477,78 @@ TEXTS = {
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
         'btn_change_lang': "🌐 Til", 'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar",
-        'btn_lua_files': "📙 LUA FILES", 'btn_py_files': "🐍 PYTHON FILES",
         'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Kunlik Masala", 'btn_theme': "🎨 Termux Temasi",
         'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
         'btn_python': "🐍 PYTHON OLISH", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
         'btn_updates': "🆕 Yangilanishlar", 'btn_devtools': "🧰 Developer Tools", 'streak_btn': "🔥 Kunlik Streak",
         'force_sub_text': "⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
+
+        # FILES - yangi kuchli tizim
+        'files_title': "🗂 **Fayllar Markazi**",
+        'files_stats': "📊 Jami: **{total_files}** fayl, **{total_cats}** papka\n\nPapkani tanlang:",
+        'files_empty': "📭 Hozircha fayllar yo'q.\n\nAdmin tez orada qo'shadi!",
+        'files_cat_title': "📂 **{cat_name}**\n\n📄 Sahifa {page}/{total_pages} • Jami: **{count}** ta",
+        'files_cat_empty': "📭 Bu papka hozircha bo'sh.",
+        'files_back_to_cats': "🔙 Papkalarga",
+        'files_btn_search': "🔍 Qidirish",
+        'files_btn_recent': "🆕 Yangi qo'shilganlar",
+        'file_sending': "⏳ Fayl yuborilmoqda...",
+        'file_premium_locked': "🔒 Bu fayl faqat Premium obunachilar uchun!\n\n💎 Premium olish: /start → 💎 Premium",
+        'file_not_found': "❌ Fayl topilmadi (o'chirilgan bo'lishi mumkin)",
+        'file_download_error': "❌ Faylni yuklab bo'lmadi.\n\nFayl o'chirilgan yoki bot ruxsati yo'q.",
+
+        'file_view_title': "📄 **{title}**",
+        'file_view_info': "📁 Papka: {cat_name}\n{icon} Tur: **{ftype}**\n💎 Holat: **{premium}**",
+        'file_btn_download': "📥 Yuklab olish",
+        'file_btn_back_cat': "🔙 Papkaga qaytish",
+
+        'files_search_prompt': "🔍 **Fayl qidirish**\n\nFayl nomini yozing:\n\n_Misol: `python`, `apk`, `lua`_",
+        'files_search_empty': "🔍 **\"{query}\"** bo'yicha hech narsa topilmadi.",
+        'files_search_results': "🔍 **\"{query}\"** — {count} ta natija:",
+        'files_recent_title': "🆕 **Yangi qo'shilgan fayllar:**",
+        'files_recent_empty': "📭 Hozircha yangi fayllar yo'q.",
+
+        # ADMIN FILES
+        'admin_files_title': "🗂 **Fayllar Boshqaruvi**\n\nJami: **{total_files}** fayl, **{total_cats}** papka\n\nPapkani tanlang:",
+        'admin_files_empty': "📭 Hozircha papkalar yo'q.\n\nYangi papka yarating:",
+        'admin_btn_new_cat': "➕ Yangi papka",
+        'admin_btn_del_cat': "🗑 Papkani o'chirish",
+        'admin_btn_stats': "📊 Statistika",
+        'admin_btn_all_files': "📋 Barcha fayllar",
+        'admin_file_choose_cat': "📂 **Qaysi papkaga qo'shmoqchisiz?**\n\nPapka tanlang yoki yangi yarating:",
+        'admin_file_new_cat_prompt': "➕ **Yangi papka yaratish**\n\nPapka nomini yozing:\n\n_Misol: `Python darsliklar` yoki `APK fayllar`_",
+        'admin_file_cat_created': "✅ **Papka yaratildi:** {name}",
+        'admin_file_send_to': "📎 **\"{cat_name}\" papkasiga fayl yuboring:**\n\n_(Hujjat, Video, Rasm yoki Audio)_",
+        'admin_file_title_prompt': "✍️ **Fayl nomini yozing:**\n\n_Misol: `Python 3.12 o'rnatish qo'llanmasi`_",
+        'admin_file_choose_del': "🗑 **Qaysi papkani o'chirmoqchisiz?**",
+        'admin_cat_deleted': "✅ Papka va undagi barcha fayllar o'chirildi!",
+        'admin_cat_del_confirm': "⚠️ **{cat_name}** papkasini o'chirishni tasdiqlaysizmi?\n\n_Ichidagi **{count}** ta fayl ham o'chadi!_",
+        'admin_file_deleted': "✅ Fayl o'chirildi!",
+        'admin_file_saved': "✅ Fayl saqlandi!",
+        'admin_file_cancel': "❌ Bekor qilindi.",
+        'admin_files_cat_title': "🗂 **{cat_name}** — Admin\n\n📄 Sahifa {page}/{total_pages} • Jami: **{count}** ta",
+        'admin_btn_add_here': "➕ Bu papkaga fayl qo'shish",
+        'admin_file_view_title': "📄 **{title}** (Admin)",
+        'admin_file_view_info': "📁 Papka: {cat_name}\n{icon} Tur: **{ftype}**\n💎 Premium: **{premium}**\n🆔 ID: `{fid}`",
+        'admin_btn_edit_title': "✏️ Nomni o'zgartirish",
+        'admin_btn_move': "📁 Papkani almashtirish",
+        'admin_btn_toggle_premium': "💎 Premium: {status}",
+        'admin_btn_delete_file': "🗑 Faylni o'chirish",
+        'admin_btn_back_to_cat': "🔙 Papkaga",
+        'admin_edit_title_prompt': "✏️ **Yangi nomni yozing:**\n\n_Hozirgi: `{old}`_",
+        'admin_title_updated': "✅ **Nom o'zgartirildi!**\n\n📄 Yangi: `{new}`",
+        'admin_move_prompt': "📁 **Qaysi papkaga ko'chirmoqchisiz?**\n\nFayl: `{title}`",
+        'admin_file_moved': "✅ **Fayl ko'chirildi!**\n\n📄 `{title}`\n📁 → **{cat_name}**",
+        'admin_premium_on': "✅ **Premium YOQILDI**",
+        'admin_premium_off': "🔓 **Premium O'CHIRILDI**",
+        'admin_file_delete_confirm': "⚠️ **Faylni o'chirishni tasdiqlaysizmi?**\n\n📄 `{title}`",
+        'admin_delete_yes': "🗑 Ha, o'chirish",
+        'admin_cancel': "❌ Bekor",
+        'admin_choose_file_to_delete': "🗑 **Qaysi faylni o'chirmoqchisiz?**",
+        'admin_all_files_title': "📋 **Barcha fayllar** (jami **{count}** ta):",
+
+        # Boshqalar
         'challenge_menu': "🧩 **Kunlik Masala**",
         'challenge_problem': "📝 **Bugungi masala:**\n\n{text}\n\n💻 *Kodni yuboring:*",
         'challenge_already_done': "✅ Siz bugungi masalani yechdingiz!",
@@ -403,26 +562,6 @@ TEXTS = {
         'script_items_menu': "⚙️ **{cat_name}**\n\nDasturlarni tanlang:",
         'btn_generate_script': "🚀 Yaratish", 'btn_clear_scripts': "🗑 Tozalash", 'btn_back_to_cats': "🔙 Orqaga",
         'script_empty': "⚠️ Dastur tanlang!", 'script_done': "✅ **Tayyor!**\n\n`bash install.sh` bilan ishga tushiring.",
-        'files_menu': "🗂 **Fayllar Markazi**\n\nPapkani tanlang:",
-        'files_empty': "Hozircha papkalar yo'q. Tez orada qo'shiladi!",
-        'files_cat_menu': "📂 **{cat_name}**\n\nFaylni tanlang:",
-        'files_cat_empty': "Bu papka hozircha bo'sh.",
-        'files_back_to_cats': "🔙 Papkalarga qaytish",
-        'file_sending': "⏳ Fayl yuborilmoqda...",
-        'file_premium_locked': "🔒 Bu fayl faqat Premium obunachilar uchun!",
-        'admin_file_choose_cat': "📂 **Qaysi papkaga qo'shmoqchisiz?**\n\nPapka tanlang yoki yangi yarating:",
-        'admin_file_no_cats': "📂 **Fayl qo'shish**\n\nHozircha papkalar yo'q.\nBoshlash uchun yangi papka yarating:",
-        'admin_file_new_cat_prompt': "➕ **Yangi papka yaratish**\n\nPapka nomini yozing:\n\n_Misol: `Python darsliklar` yoki `APK fayllar`_",
-        'admin_file_cat_created': "✅ **Papka yaratildi:** {name}",
-        'admin_file_send_to': "📎 **\"{cat_name}\" papkasiga fayl yuboring:**\n\n_(Hujjat, Video yoki Rasm)_",
-        'admin_file_title_prompt': "✍️ **Fayl nomini va tavsifini yozing:**\n\n_Misol: `Python 3.12 o'rnatish qo'llanmasi`_",
-        'admin_btn_new_cat': "➕ Yangi papka yaratish",
-        'admin_btn_del_cat': "🗑 Papkani o'chirish",
-        'admin_file_choose_del': "🗑 **Qaysi papkani o'chirmoqchisiz?**",
-        'admin_cat_deleted': "✅ Papka va undagi barcha fayllar o'chirildi!",
-        'admin_cat_del_confirm': "⚠️ **{cat_name}** papkasini o'chirishni tasdiqlaysizmi?\n\n_(Ichidagi barcha fayllar ham o'chadi)_",
-        'admin_file_deleted': "✅ Fayl o'chirildi!",
-        'admin_file_saved': "✅ Fayl saqlandi!",
         'premium_menu': "💎 **Premium Obuna**\n\n✅ Cheksiz AI\n✅ Premium fayllar\n\n💰 **50 Stars** — 1 oy",
         'btn_buy_premium': "⭐️ 50 Stars evaziga olish",
         'premium_success': "🎉 **Premium faollashtirildi!**",
@@ -430,7 +569,7 @@ TEXTS = {
         'btn_go_premium': "💎 Premium olish",
         'admin_panel': "👑 **Admin Panel**",
         'admin_btn_stats': "📊 Statistika", 'admin_btn_bcast': "📢 Xabar",
-        'admin_btn_points': "🎁 Ball berish", 'admin_btn_add_file': "➕ Fayl",
+        'admin_btn_points': "🎁 Ball berish", 'admin_btn_add_file': "🗂 Fayllar boshqaruvi",
         'admin_btn_close': "❌ Yopish",
         'admin_btn_update': "📣 Yangilanish e'lon qilish",
         'admin_btn_auto_fwd_on': "🔛 Auto-forward: YOQILGAN",
@@ -438,7 +577,6 @@ TEXTS = {
         'admin_points_prompt': "🎁 **Aksiya!** Ball miqdori:",
         'admin_points_wait': "⏳...",
         'admin_points_done': "✅ **Aksiya!**\n🎁 +{points}\n📩 {success}\n❌ {fail}",
-        'admin_file_cancel': "❌ Bekor qilindi.",
         'admin_update_prompt': "📣 **Yangilanish e'lon qilish**\n\nXabar matnini yozing:",
         'admin_update_wait': "⏳ Yuborilmoqda...",
         'admin_update_done': "✅ **Yuborildi!**\n📩 {success}\n❌ {fail}",
@@ -494,7 +632,6 @@ TEXTS = {
 
 for other_lang in ['ru', 'en', 'ar']:
     TEXTS[other_lang] = {k: v for k, v in TEXTS['uz'].items()}
-    TEXTS[other_lang]['choose_lang'] = "🌐 Select language" if other_lang == 'en' else ("🌐 Выберите язык" if other_lang == 'ru' else "🌐 اختر اللغة")
 
 TIPS = [{'uz': "**Tezroq kod:**\n`nano` o'rniga `micro` ishlating.", 'ru': "`micro`", 'en': "`micro`", 'ar': "`micro`"}]
 COMMANDS_DATA = {'files': [('ls', {'uz': 'Fayllar', 'ru': 'Файлы', 'en': 'Files', 'ar': 'ملفات'})],
@@ -551,7 +688,6 @@ def get_main_menu(lang, user_id):
     t = TEXTS[lang]
     keyboard = [
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_lua_files'], callback_data="quick_cat_Lua Fayllar"), InlineKeyboardButton(t['btn_py_files'], callback_data="quick_cat_Python Fayllar")],
         [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
         [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
         [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
@@ -613,7 +749,7 @@ def get_admin_keyboard(lang, af_status="off"):
         [InlineKeyboardButton(t['admin_btn_bcast'], callback_data="admin_bcast")],
         [InlineKeyboardButton(t['admin_btn_update'], callback_data="admin_update")],
         [InlineKeyboardButton(t['admin_btn_points'], callback_data="admin_points")],
-        [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_add_file")],
+        [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_files_menu")],
         [InlineKeyboardButton(af_text, callback_data="admin_toggle_autofwd")],
         [InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_close")]
     ])
@@ -683,49 +819,145 @@ def get_quiz_keyboard(options, lang):
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_files_categories_keyboard(lang, categories):
+# ============ FILES KLAVIATURALAR (YANGI) ============
+def get_files_menu_keyboard(lang, categories):
+    """Foydalanuvchi uchun fayllar menyusi"""
     t = TEXTS[lang]
-    keyboard = []
+    kb = []
     for cat in categories:
-        keyboard.append([InlineKeyboardButton(f"{cat['icon']} {cat['name']}", callback_data=f"files_cat_{cat['id']}")])
-    keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
-    return InlineKeyboardMarkup(keyboard)
+        count = cat.get('file_count', 0) if isinstance(cat, dict) else cat['file_count']
+        kb.append([InlineKeyboardButton(
+            f"{cat['icon']} {cat['name']} — {count} ta",
+            callback_data=f"files_cat_{cat['id']}_0"
+        )])
+    kb.append([
+        InlineKeyboardButton(t['files_btn_search'], callback_data="files_search"),
+        InlineKeyboardButton(t['files_btn_recent'], callback_data="files_recent")
+    ])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+    return InlineKeyboardMarkup(kb)
 
-def get_category_files_keyboard(lang, files, cat_id, is_admin=False):
+def get_files_cat_keyboard(lang, files, cat_id, page, total_pages):
+    """Papka ichidagi fayllar (pagination)"""
     t = TEXTS[lang]
-    keyboard = []
+    kb = []
     for f in files:
-        lock = "🔒 " if f['is_premium'] else "📄 "
-        if is_admin:
-            keyboard.append([InlineKeyboardButton(f"🗑 {lock}{f['title']}", callback_data=f"admin_del_file_{f['id']}")])
-        else:
-            keyboard.append([InlineKeyboardButton(f"{lock}{f['title']}", callback_data=f"get_file_{f['id']}")])
-    if is_admin:
-        keyboard.append([InlineKeyboardButton("🗑 Papkani o'chirish", callback_data=f"admin_delcat_confirm_{cat_id}")])
-        keyboard.append([InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_menu")])
-    else:
-        keyboard.append([InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")])
-        keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
-    return InlineKeyboardMarkup(keyboard)
+        icon = "🔒" if f['is_premium'] else file_type_icon(f['file_type'])
+        kb.append([InlineKeyboardButton(f"{icon} {f['title']}", callback_data=f"file_view_{f['id']}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(t['btn_prev'], callback_data=f"files_cat_{cat_id}_{page-1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(t['btn_next'], callback_data=f"files_cat_{cat_id}_{page+1}"))
+    if nav: kb.append(nav)
+    kb.append([InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+    return InlineKeyboardMarkup(kb)
 
-def get_admin_file_categories_keyboard(lang, categories):
+def get_file_view_keyboard(lang, file_id, cat_id):
+    """Fayl ko'rish (yuklashdan oldin)"""
     t = TEXTS[lang]
-    keyboard = []
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t['file_btn_download'], callback_data=f"file_dl_{file_id}")],
+        [InlineKeyboardButton(t['file_btn_back_cat'], callback_data=f"files_cat_{cat_id}_0")],
+        [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
+    ])
+
+def get_search_results_keyboard(lang, results):
+    t = TEXTS[lang]
+    kb = []
+    for f in results:
+        icon = "🔒" if f['is_premium'] else file_type_icon(f['file_type'])
+        cat = f"{f['cat_icon'] or '📁'} {f['cat_name'] or '—'}"
+        kb.append([InlineKeyboardButton(f"{icon} {f['title']}", callback_data=f"file_view_{f['id']}")])
+    kb.append([InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
+    return InlineKeyboardMarkup(kb)
+
+# ============ ADMIN FILES KLAVIATURALAR (YANGI) ============
+def get_admin_files_menu_keyboard(lang, categories):
+    t = TEXTS[lang]
+    kb = []
     for cat in categories:
-        keyboard.append([InlineKeyboardButton(f"{cat['icon']} {cat['name']}", callback_data=f"admin_file_cat_{cat['id']}")])
-    keyboard.append([InlineKeyboardButton(t['admin_btn_new_cat'], callback_data="admin_file_new_cat")])
+        count = cat['file_count']
+        kb.append([InlineKeyboardButton(f"{cat['icon']} {cat['name']} — {count} ta", callback_data=f"admin_files_cat_{cat['id']}_0")])
+    kb.append([
+        InlineKeyboardButton(t['admin_btn_new_cat'], callback_data="admin_file_new_cat"),
+        InlineKeyboardButton(t['admin_btn_all_files'], callback_data="admin_all_files_0")
+    ])
     if categories:
-        keyboard.append([InlineKeyboardButton(t['admin_btn_del_cat'], callback_data="admin_file_delcat_menu")])
-    keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")])
-    return InlineKeyboardMarkup(keyboard)
+        kb.append([InlineKeyboardButton(t['admin_btn_del_cat'], callback_data="admin_file_delcat_menu")])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")])
+    return InlineKeyboardMarkup(kb)
+
+def get_admin_files_cat_keyboard(lang, files, cat_id, page, total_pages):
+    t = TEXTS[lang]
+    kb = []
+    for f in files:
+        icon = "🔒" if f['is_premium'] else file_type_icon(f['file_type'])
+        kb.append([InlineKeyboardButton(f"{icon} {f['title']}", callback_data=f"admin_file_view_{f['id']}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(t['btn_prev'], callback_data=f"admin_files_cat_{cat_id}_{page-1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(t['btn_next'], callback_data=f"admin_files_cat_{cat_id}_{page+1}"))
+    if nav: kb.append(nav)
+    kb.append([InlineKeyboardButton(t['admin_btn_add_here'], callback_data=f"admin_file_cat_{cat_id}")])
+    kb.append([InlineKeyboardButton(t['admin_btn_del_cat'], callback_data=f"admin_delcat_confirm_{cat_id}")])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")])
+    return InlineKeyboardMarkup(kb)
+
+def get_admin_file_view_keyboard(lang, file_id, is_premium, cat_id):
+    t = TEXTS[lang]
+    prem_status = "🔒 Yoqilgan" if is_premium else "🔓 O'chirilgan"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t['admin_btn_edit_title'], callback_data=f"admin_file_edit_{file_id}")],
+        [InlineKeyboardButton(t['admin_btn_move'], callback_data=f"admin_file_move_{file_id}")],
+        [InlineKeyboardButton(t['admin_btn_toggle_premium'].format(status=prem_status), callback_data=f"admin_file_premium_{file_id}")],
+        [InlineKeyboardButton(t['admin_btn_delete_file'], callback_data=f"admin_file_del_{file_id}")],
+        [InlineKeyboardButton(t['admin_btn_back_to_cat'], callback_data=f"admin_files_cat_{cat_id}_0")],
+        [InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")]
+    ])
+
+def get_admin_move_keyboard(lang, file_id, categories):
+    t = TEXTS[lang]
+    kb = []
+    for cat in categories:
+        kb.append([InlineKeyboardButton(f"{cat['icon']} {cat['name']}", callback_data=f"admin_file_move_do_{file_id}_{cat['id']}")])
+    kb.append([InlineKeyboardButton(t['admin_cancel'], callback_data=f"admin_file_view_{file_id}")])
+    return InlineKeyboardMarkup(kb)
 
 def get_admin_delcat_keyboard(lang, categories):
     t = TEXTS[lang]
-    keyboard = []
+    kb = []
     for cat in categories:
-        keyboard.append([InlineKeyboardButton(f"🗑 {cat['icon']} {cat['name']}", callback_data=f"admin_delcat_confirm_{cat['id']}")])
-    keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_add_file")])
-    return InlineKeyboardMarkup(keyboard)
+        kb.append([InlineKeyboardButton(f"🗑 {cat['icon']} {cat['name']}", callback_data=f"admin_delcat_confirm_{cat['id']}")])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")])
+    return InlineKeyboardMarkup(kb)
+
+def get_admin_file_categories_keyboard(lang, categories):
+    t = TEXTS[lang]
+    kb = []
+    for cat in categories:
+        kb.append([InlineKeyboardButton(f"{cat['icon']} {cat['name']}", callback_data=f"admin_file_cat_{cat['id']}")])
+    kb.append([InlineKeyboardButton(t['admin_btn_new_cat'], callback_data="admin_file_new_cat")])
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")])
+    return InlineKeyboardMarkup(kb)
+
+def get_admin_all_files_keyboard(lang, files, page, total_pages):
+    t = TEXTS[lang]
+    kb = []
+    for f in files:
+        icon = "🔒" if f['is_premium'] else file_type_icon(f['file_type'])
+        kb.append([InlineKeyboardButton(f"{icon} {f['title']}", callback_data=f"admin_file_view_{f['id']}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(t['btn_prev'], callback_data=f"admin_all_files_{page-1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(t['btn_next'], callback_data=f"admin_all_files_{page+1}"))
+    if nav: kb.append(nav)
+    kb.append([InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")])
+    return InlineKeyboardMarkup(kb)
 
 # ==========================================
 # START
@@ -768,84 +1000,289 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
-    if data.startswith("quick_cat_"):
-        cat_name = data.replace("quick_cat_", "")
-        cat = await get_category_by_name(cat_name)
-        if not cat:
-            new_id = await add_category(cat_name, icon='📁')
-            cat = await get_category_by_id(new_id) if new_id else None
-        if not cat:
-            return await query.answer("❌ Papka topilmadi.", show_alert=True)
-        files = await get_files_by_category(cat['id'])
-        if not files:
-            return await query.answer(f"📂 {cat['icon']} {cat['name']} hozircha bo'sh.\n\nAdmin fayl yuklashi mumkin.", show_alert=True)
-        text = t['files_cat_menu'].format(cat_name=f"{cat['icon']} {cat['name']}")
-        await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat['id']))
-
-    elif data == "files_menu":
-        categories = await get_all_categories()
-        if not categories:
-            return await query.answer(t['files_empty'], show_alert=True)
-        await edit_or_send(query, context, t['files_menu'], get_files_categories_keyboard(lang, categories))
+    # ================================================================
+    # ============ FILES — FOYDALANUVCHI (YANGI KUCHLI) ==============
+    # ================================================================
+    if data == "files_menu":
+        try:
+            categories = await get_categories_with_counts()
+            total_files = await count_all_files()
+            total_cats = await count_all_categories()
+            if not categories:
+                return await edit_or_send(query, context, t['files_empty'],
+                    InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
+            text = t['files_title'] + "\n\n" + t['files_stats'].format(total_files=total_files, total_cats=total_cats)
+            await edit_or_send(query, context, text, get_files_menu_keyboard(lang, categories))
+        except Exception as e:
+            logging.error(f"files_menu xato: {e}")
+            await query.answer(f"❌ Xatolik: {str(e)[:50]}", show_alert=True)
 
     elif data.startswith("files_cat_"):
-        cat_id = int(data.replace("files_cat_", ""))
-        cat = await get_category_by_id(cat_id)
-        if not cat:
-            return await query.answer("❌ Papka topilmadi", show_alert=True)
-        files = await get_files_by_category(cat_id)
-        if not files:
-            return await query.answer(t['files_cat_empty'], show_alert=True)
-        text = t['files_cat_menu'].format(cat_name=f"{cat['icon']} {cat['name']}")
-        await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat_id))
-
-    elif data.startswith("get_file_"):
-        file_id = int(data.replace("get_file_", ""))
-        file_data = await get_file_by_id(file_id)
-        if not file_data: return await query.answer("❌", show_alert=True)
-        if file_data['is_premium'] and user_id != ADMIN_ID:
-            if not db_pool: return
-            async with db_pool.acquire() as conn:
-                user = await conn.fetchrow('SELECT is_premium FROM users WHERE user_id = $1', user_id)
-            if not user or not user['is_premium']:
-                return await query.answer(t['file_premium_locked'], show_alert=True)
-        await query.answer(t['file_sending'])
         try:
-            if file_data['file_type'] == 'document':
-                await context.bot.send_document(chat_id=chat_id, document=file_data['file_id'], caption=f"📂 {file_data['title']}")
-            elif file_data['file_type'] == 'video':
-                await context.bot.send_video(chat_id=chat_id, video=file_data['file_id'], caption=f"🎬 {file_data['title']}")
-            elif file_data['file_type'] == 'photo':
-                await context.bot.send_photo(chat_id=chat_id, photo=file_data['file_id'], caption=f"🖼 {file_data['title']}")
+            parts = data.replace("files_cat_", "").split("_")
+            cat_id = int(parts[0])
+            page = int(parts[1]) if len(parts) > 1 else 0
+            cat = await get_category_by_id(cat_id)
+            if not cat:
+                return await query.answer("❌ Papka topilmadi", show_alert=True)
+            total = await count_files_in_category(cat_id)
+            total_pages = max(1, (total + FILES_PER_PAGE - 1) // FILES_PER_PAGE)
+            page = max(0, min(page, total_pages - 1))
+            files = await get_files_by_category_paginated(cat_id, page)
+            if not files:
+                return await query.answer(t['files_cat_empty'], show_alert=True)
+            text = t['files_cat_title'].format(
+                cat_name=f"{cat['icon']} {cat['name']}",
+                page=page+1, total_pages=total_pages, count=total
+            )
+            await edit_or_send(query, context, text, get_files_cat_keyboard(lang, files, cat_id, page, total_pages))
         except Exception as e:
-            logging.error(f"Fayl yuborishda xato: {e}")
-            await context.bot.send_message(chat_id=chat_id, text="❌ Xatolik.")
+            logging.error(f"files_cat xato: {e}")
+            await query.answer(f"❌ Xatolik", show_alert=True)
 
-    elif data == "admin_add_file":
-        if user_id != ADMIN_ID: return
-        context.user_data.pop('selected_category', None)
-        context.user_data.pop('selected_category_name', None)
-        context.user_data['state'] = None
-        categories = await get_all_categories()
-        text = t['admin_file_choose_cat'] if categories else t['admin_file_no_cats']
-        await edit_or_send(query, context, text, get_admin_file_categories_keyboard(lang, categories))
+    elif data.startswith("file_view_"):
+        try:
+            file_id = int(data.replace("file_view_", ""))
+            fd = await get_file_by_id(file_id)
+            if not fd:
+                return await query.answer(t['file_not_found'], show_alert=True)
+            cat = await get_category_by_id(fd['category_id']) if fd['category_id'] else None
+            cat_name = f"{cat['icon']} {cat['name']}" if cat else "—"
+            premium = "🔒 Premium" if fd['is_premium'] else "🆓 Bepul"
+            text = (t['file_view_title'].format(title=fd['title']) + "\n\n" +
+                    t['file_view_info'].format(cat_name=cat_name,
+                        icon=file_type_icon(fd['file_type']),
+                        ftype=fd['file_type'], premium=premium))
+            cat_id = fd['category_id'] or 0
+            await edit_or_send(query, context, text, get_file_view_keyboard(lang, file_id, cat_id))
+        except Exception as e:
+            logging.error(f"file_view xato: {e}")
+            await query.answer("❌", show_alert=True)
 
-    elif data.startswith("admin_file_cat_"):
+    elif data.startswith("file_dl_"):
+        try:
+            file_id = int(data.replace("file_dl_", ""))
+            fd = await get_file_by_id(file_id)
+            if not fd:
+                return await query.answer(t['file_not_found'], show_alert=True)
+            # Premium tekshirish
+            if fd['is_premium'] and user_id != ADMIN_ID:
+                is_prem = False
+                if db_pool:
+                    async with db_pool.acquire() as conn:
+                        u = await conn.fetchrow('SELECT is_premium FROM users WHERE user_id = $1', user_id)
+                        is_prem = u['is_premium'] if u else False
+                if not is_prem:
+                    return await query.answer(t['file_premium_locked'], show_alert=True)
+            await query.answer(t['file_sending'])
+            ok, err = await safe_send_file(context, chat_id, fd)
+            if not ok:
+                await context.bot.send_message(chat_id=chat_id, text=t['file_download_error'], parse_mode='Markdown')
+        except Exception as e:
+            logging.error(f"file_dl xato: {e}")
+            await query.answer("❌ Xatolik", show_alert=True)
+
+    elif data == "files_search":
+        context.user_data['state'] = 'in_file_search'
+        await edit_or_send(query, context, t['files_search_prompt'],
+            InlineKeyboardMarkup([[InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")]]))
+
+    elif data == "files_recent":
+        try:
+            files = await get_recent_files(10)
+            if not files:
+                return await query.answer(t['files_recent_empty'], show_alert=True)
+            text = t['files_recent_title'] + "\n\n"
+            await edit_or_send(query, context, text, get_search_results_keyboard(lang, files))
+        except Exception as e:
+            logging.error(f"files_recent xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    # ================================================================
+    # ============ ADMIN FILES (YANGI KUCHLI) ========================
+    # ================================================================
+    elif data == "admin_files_menu":
         if user_id != ADMIN_ID: return
-        cat_id = int(data.replace("admin_file_cat_", ""))
-        cat = await get_category_by_id(cat_id)
-        if not cat:
-            return await query.answer("❌ Papka topilmadi", show_alert=True)
-        context.user_data['selected_category'] = cat_id
-        context.user_data['selected_category_name'] = f"{cat['icon']} {cat['name']}"
-        context.user_data['state'] = 'in_add_file'
-        text = t['admin_file_send_to'].format(cat_name=f"{cat['icon']} {cat['name']}")
-        await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_add_file")]]))
+        try:
+            categories = await get_categories_with_counts()
+            total_files = await count_all_files()
+            total_cats = await count_all_categories()
+            if not categories:
+                return await edit_or_send(query, context, t['admin_files_empty'],
+                    InlineKeyboardMarkup([
+                        [InlineKeyboardButton(t['admin_btn_new_cat'], callback_data="admin_file_new_cat")],
+                        [InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]
+                    ]))
+            text = t['admin_files_title'].format(total_files=total_files, total_cats=total_cats)
+            await edit_or_send(query, context, text, get_admin_files_menu_keyboard(lang, categories))
+        except Exception as e:
+            logging.error(f"admin_files_menu xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_files_cat_"):
+        if user_id != ADMIN_ID: return
+        try:
+            parts = data.replace("admin_files_cat_", "").split("_")
+            cat_id = int(parts[0])
+            page = int(parts[1]) if len(parts) > 1 else 0
+            cat = await get_category_by_id(cat_id)
+            if not cat:
+                return await query.answer("❌ Papka topilmadi", show_alert=True)
+            total = await count_files_in_category(cat_id)
+            total_pages = max(1, (total + FILES_PER_PAGE - 1) // FILES_PER_PAGE)
+            page = max(0, min(page, total_pages - 1))
+            files = await get_files_by_category_paginated(cat_id, page)
+            text = t['admin_files_cat_title'].format(
+                cat_name=f"{cat['icon']} {cat['name']}",
+                page=page+1, total_pages=total_pages, count=total
+            )
+            await edit_or_send(query, context, text, get_admin_files_cat_keyboard(lang, files, cat_id, page, total_pages))
+        except Exception as e:
+            logging.error(f"admin_files_cat xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_file_view_"):
+        if user_id != ADMIN_ID: return
+        try:
+            file_id = int(data.replace("admin_file_view_", ""))
+            fd = await get_file_by_id(file_id)
+            if not fd:
+                return await query.answer(t['file_not_found'], show_alert=True)
+            cat = await get_category_by_id(fd['category_id']) if fd['category_id'] else None
+            cat_name = f"{cat['icon']} {cat['name']}" if cat else "—"
+            premium = "🔒 Yoqilgan" if fd['is_premium'] else "🔓 O'chirilgan"
+            text = (t['admin_file_view_title'].format(title=fd['title']) + "\n\n" +
+                    t['admin_file_view_info'].format(
+                        cat_name=cat_name, icon=file_type_icon(fd['file_type']),
+                        ftype=fd['file_type'], premium=premium, fid=file_id))
+            await edit_or_send(query, context, text,
+                get_admin_file_view_keyboard(lang, file_id, fd['is_premium'], fd['category_id'] or 0))
+        except Exception as e:
+            logging.error(f"admin_file_view xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_file_edit_"):
+        if user_id != ADMIN_ID: return
+        try:
+            file_id = int(data.replace("admin_file_edit_", ""))
+            fd = await get_file_by_id(file_id)
+            if not fd: return await query.answer("❌", show_alert=True)
+            context.user_data['state'] = 'in_file_title_edit'
+            context.user_data['edit_file_id'] = file_id
+            await edit_or_send(query, context, t['admin_edit_title_prompt'].format(old=fd['title']),
+                InlineKeyboardMarkup([[InlineKeyboardButton(t['admin_cancel'], callback_data=f"admin_file_view_{file_id}")]]))
+        except Exception as e:
+            logging.error(f"admin_file_edit xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_file_move_do_"):
+        if user_id != ADMIN_ID: return
+        try:
+            parts = data.replace("admin_file_move_do_", "").split("_")
+            file_id = int(parts[0])
+            new_cat_id = int(parts[1])
+            fd = await get_file_by_id(file_id)
+            new_cat = await get_category_by_id(new_cat_id)
+            if not fd or not new_cat:
+                return await query.answer("❌", show_alert=True)
+            await move_file_to_category(file_id, new_cat_id)
+            await query.answer("✅")
+            await edit_or_send(query, context,
+                t['admin_file_moved'].format(title=fd['title'], cat_name=f"{new_cat['icon']} {new_cat['name']}"),
+                InlineKeyboardMarkup([[InlineKeyboardButton(t['admin_btn_back_to_cat'], callback_data=f"admin_files_cat_{new_cat_id}_0")]]))
+        except Exception as e:
+            logging.error(f"admin_file_move_do xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_file_move_"):
+        if user_id != ADMIN_ID: return
+        try:
+            file_id = int(data.replace("admin_file_move_", ""))
+            fd = await get_file_by_id(file_id)
+            if not fd: return await query.answer("❌", show_alert=True)
+            categories = await get_all_categories()
+            if not categories:
+                return await query.answer("Papkalar yo'q", show_alert=True)
+            await edit_or_send(query, context,
+                t['admin_move_prompt'].format(title=fd['title']),
+                get_admin_move_keyboard(lang, file_id, categories))
+        except Exception as e:
+            logging.error(f"admin_file_move xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_file_premium_"):
+        if user_id != ADMIN_ID: return
+        try:
+            file_id = int(data.replace("admin_file_premium_", ""))
+            await toggle_file_premium(file_id)
+            fd = await get_file_by_id(file_id)
+            if not fd: return await query.answer("❌", show_alert=True)
+            msg = t['admin_premium_on'] if fd['is_premium'] else t['admin_premium_off']
+            await query.answer(msg, show_alert=True)
+            # Refresh file view
+            cat = await get_category_by_id(fd['category_id']) if fd['category_id'] else None
+            cat_name = f"{cat['icon']} {cat['name']}" if cat else "—"
+            premium = "🔒 Yoqilgan" if fd['is_premium'] else "🔓 O'chirilgan"
+            text = (t['admin_file_view_title'].format(title=fd['title']) + "\n\n" +
+                    t['admin_file_view_info'].format(
+                        cat_name=cat_name, icon=file_type_icon(fd['file_type']),
+                        ftype=fd['file_type'], premium=premium, fid=file_id))
+            await edit_or_send(query, context, text,
+                get_admin_file_view_keyboard(lang, file_id, fd['is_premium'], fd['category_id'] or 0))
+        except Exception as e:
+            logging.error(f"admin_file_premium xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data.startswith("admin_file_del_"):
+        if user_id != ADMIN_ID: return
+        try:
+            file_id = int(data.replace("admin_file_del_", ""))
+            fd = await get_file_by_id(file_id)
+            if not fd: return await query.answer("❌", show_alert=True)
+            cat_id = fd['category_id'] or 0
+            await delete_file_by_id(file_id)
+            await query.answer(t['admin_file_deleted'], show_alert=True)
+            # Papkaga qaytish
+            cat = await get_category_by_id(cat_id) if cat_id else None
+            if cat:
+                total = await count_files_in_category(cat_id)
+                total_pages = max(1, (total + FILES_PER_PAGE - 1) // FILES_PER_PAGE)
+                files = await get_files_by_category_paginated(cat_id, 0)
+                text = t['admin_files_cat_title'].format(
+                    cat_name=f"{cat['icon']} {cat['name']}",
+                    page=1, total_pages=total_pages, count=total
+                )
+                await edit_or_send(query, context, text, get_admin_files_cat_keyboard(lang, files, cat_id, 0, total_pages))
+            else:
+                categories = await get_categories_with_counts()
+                await edit_or_send(query, context, t['admin_files_title'].format(total_files=await count_all_files(), total_cats=await count_all_categories()), get_admin_files_menu_keyboard(lang, categories))
+        except Exception as e:
+            logging.error(f"admin_file_del xato: {e}")
+            await query.answer("❌", show_alert=True)
+
+    elif data == "admin_all_files_0" or data.startswith("admin_all_files_"):
+        if user_id != ADMIN_ID: return
+        try:
+            page = int(data.replace("admin_all_files_", "")) if data != "admin_all_files_0" else 0
+            total = await count_all_files()
+            if total == 0:
+                return await query.answer("📭 Fayllar yo'q", show_alert=True)
+            total_pages = max(1, (total + FILES_PER_PAGE - 1) // FILES_PER_PAGE)
+            page = max(0, min(page, total_pages - 1))
+            async with db_pool.acquire() as conn:
+                files = await conn.fetch('SELECT id, title, is_premium, file_type FROM files ORDER BY id DESC LIMIT $1 OFFSET $2',
+                    FILES_PER_PAGE, page * FILES_PER_PAGE)
+            text = t['admin_all_files_title'].format(count=total) + f"\n\n📄 Sahifa {page+1}/{total_pages}"
+            await edit_or_send(query, context, text, get_admin_all_files_keyboard(lang, files, page, total_pages))
+        except Exception as e:
+            logging.error(f"admin_all_files xato: {e}")
+            await query.answer("❌", show_alert=True)
 
     elif data == "admin_file_new_cat":
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_new_cat_name'
-        await edit_or_send(query, context, t['admin_file_new_cat_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_add_file")]]))
+        await edit_or_send(query, context, t['admin_file_new_cat_prompt'],
+            InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")]]))
 
     elif data == "admin_file_delcat_menu":
         if user_id != ADMIN_ID: return
@@ -856,41 +1293,58 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("admin_delcat_confirm_"):
         if user_id != ADMIN_ID: return
-        cat_id = int(data.replace("admin_delcat_confirm_", ""))
-        cat = await get_category_by_id(cat_id)
-        if not cat:
-            return await query.answer("❌", show_alert=True)
-        file_count = await count_files_in_category(cat_id)
-        text = t['admin_cat_del_confirm'].format(cat_name=f"{cat['icon']} {cat['name']}") + f"\n\n📄 Fayllar soni: **{file_count}**"
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Ha, o'chirish", callback_data=f"admin_delcat_final_{cat_id}")],
-            [InlineKeyboardButton("❌ Bekor qilish", callback_data="admin_add_file")]
-        ])
-        await edit_or_send(query, context, text, kb)
+        try:
+            cat_id = int(data.replace("admin_delcat_confirm_", ""))
+            cat = await get_category_by_id(cat_id)
+            if not cat:
+                return await query.answer("❌", show_alert=True)
+            file_count = await count_files_in_category(cat_id)
+            text = t['admin_cat_del_confirm'].format(
+                cat_name=f"{cat['icon']} {cat['name']}", count=file_count)
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Ha, o'chirish", callback_data=f"admin_delcat_final_{cat_id}")],
+                [InlineKeyboardButton("❌ Bekor", callback_data="admin_files_menu")]
+            ])
+            await edit_or_send(query, context, text, kb)
+        except Exception as e:
+            logging.error(f"admin_delcat_confirm xato: {e}")
+            await query.answer("❌", show_alert=True)
 
     elif data.startswith("admin_delcat_final_"):
         if user_id != ADMIN_ID: return
-        cat_id = int(data.replace("admin_delcat_final_", ""))
-        await delete_category(cat_id)
-        await ensure_default_categories()
-        categories = await get_all_categories()
-        text = t['admin_cat_deleted'] + "\n\n" + (t['admin_file_choose_cat'] if categories else t['admin_file_no_cats'])
-        await edit_or_send(query, context, text, get_admin_file_categories_keyboard(lang, categories))
+        try:
+            cat_id = int(data.replace("admin_delcat_final_", ""))
+            await delete_category(cat_id)
+            await ensure_default_categories()
+            await query.answer("✅", show_alert=True)
+            categories = await get_categories_with_counts()
+            text = t['admin_cat_deleted'] + "\n\n" + t['admin_files_title'].format(
+                total_files=await count_all_files(), total_cats=await count_all_categories())
+            await edit_or_send(query, context, text, get_admin_files_menu_keyboard(lang, categories))
+        except Exception as e:
+            logging.error(f"admin_delcat_final xato: {e}")
+            await query.answer("❌", show_alert=True)
 
-    elif data.startswith("admin_del_file_"):
+    elif data.startswith("admin_file_cat_"):
         if user_id != ADMIN_ID: return
-        file_id = int(data.replace("admin_del_file_", ""))
-        file_data = await get_file_by_id(file_id)
-        if not file_data:
-            return await query.answer("❌ Fayl topilmadi", show_alert=True)
-        cat_id = file_data['category_id']
-        await delete_file_by_id(file_id)
-        cat = await get_category_by_id(cat_id) if cat_id else None
-        files = await get_files_by_category(cat_id) if cat_id else []
-        cat_name = f"{cat['icon']} {cat['name']}" if cat else "📂 Papka"
-        text = f"✅ Fayl o'chirildi!\n\n{t['files_cat_menu'].format(cat_name=cat_name)}"
-        await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat_id, is_admin=True))
+        try:
+            cat_id = int(data.replace("admin_file_cat_", ""))
+            cat = await get_category_by_id(cat_id)
+            if not cat:
+                return await query.answer("❌ Papka topilmadi", show_alert=True)
+            context.user_data['selected_category'] = cat_id
+            context.user_data['selected_category_name'] = f"{cat['icon']} {cat['name']}"
+            context.user_data['state'] = 'in_add_file'
+            text = t['admin_file_send_to'].format(cat_name=f"{cat['icon']} {cat['name']}")
+            await edit_or_send(query, context, text,
+                InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")]]))
+        except Exception as e:
+            logging.error(f"admin_file_cat xato: {e}")
+            await query.answer("❌", show_alert=True)
 
+    # ================================================================
+    # ============ BOSHQA HANDLERLAR (o'zgarmagan) ===================
+    # ================================================================
     elif data == "premium_menu":
         await edit_or_send(query, context, t['premium_menu'], get_premium_keyboard(lang))
 
@@ -1001,7 +1455,7 @@ color15=#ffffff
             top = await conn.fetchval('SELECT MAX(score) FROM users')
             nfiles = await conn.fetchval('SELECT COUNT(*) FROM files')
             ncats = await conn.fetchval('SELECT COUNT(*) FROM file_categories')
-        text = f"📊 **Statistika**\n\n👥 Foydalanuvchilar: **{total}**\n💎 Premium: **{prem}**\n🏆 Eng yuqori: **{top}**\n📂 Papkalar: **{ncats}**\n📄 Fayllar: **{nfiles}**"
+        text = f"📊 **Statistika**\n\n👥 Foydalanuvchilar: **{total}**\n💎 Premium: **{prem}**\n🏆 Eng yuqori: **{top or 0}**\n📂 Papkalar: **{ncats}**\n📄 Fayllar: **{nfiles}**"
         await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_update":
         if user_id != ADMIN_ID: return
@@ -1244,14 +1698,8 @@ color15=#ffffff
         if not attach: return await query.answer("❌ Fayl topilmadi", show_alert=True)
         try:
             await query.answer("⏳")
-            if attach['file_type'] == 'document':
-                await context.bot.send_document(chat_id=user_id, document=attach['file_id'], caption=f"📥 {attach['file_name']}")
-            elif attach['file_type'] == 'video':
-                await context.bot.send_video(chat_id=user_id, video=attach['file_id'], caption=f"🎥 {attach['file_name']}")
-            elif attach['file_type'] == 'photo':
-                await context.bot.send_photo(chat_id=user_id, photo=attach['file_id'], caption=f"🖼 {attach['file_name']}")
-            elif attach['file_type'] == 'audio':
-                await context.bot.send_audio(chat_id=user_id, audio=attach['file_id'], caption=f"🎵 {attach['file_name']}")
+            fd = {'file_type': attach['file_type'], 'file_id': attach['file_id'], 'title': attach['file_name']}
+            await safe_send_file(context, user_id, fd)
         except Exception as e:
             logging.error(f"Fayl yuborishda xato: {e}")
             await query.answer("❌ /start bering", show_alert=True)
@@ -1264,6 +1712,9 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await q.answer(ok=(q.invoice_payload == "premium_sub_payload"), error_message="Xatolik")
 
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = context.user_data.get('lang', 'uz')
+    t = TEXTS[lang]async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
@@ -1512,13 +1963,79 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
 
+    # ============================================================
+    # FOYDALANUVCHI: FAYL QIDIRUV
+    # ============================================================
+    if context.user_data.get('state') == 'in_file_search':
+        if update.message.text == "/cancel":
+            context.user_data['state'] = None
+            await update.message.reply_text(t['admin_cancel'],
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")]]))
+            return
+        if update.message.text:
+            query_text = update.message.text.strip()[:100]
+            try:
+                results = await search_files(query_text)
+                context.user_data['state'] = None
+                if not results:
+                    await update.message.reply_text(
+                        t['files_search_empty'].format(query=query_text),
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")]]),
+                        parse_mode='Markdown')
+                    return
+                text = t['files_search_results'].format(query=query_text, count=len(results))
+                await update.message.reply_text(text, reply_markup=get_search_results_keyboard(lang, results), parse_mode='Markdown')
+            except Exception as e:
+                logging.error(f"search xato: {e}")
+                await update.message.reply_text("❌ Xatolik.")
+                context.user_data['state'] = None
+        return
+
+    # ============================================================
+    # ADMIN: FAYL NOMINI O'ZGARTIRISH
+    # ============================================================
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_file_title_edit':
+        if update.message.text == "/cancel":
+            file_id = context.user_data.get('edit_file_id')
+            context.user_data['state'] = None
+            context.user_data.pop('edit_file_id', None)
+            await update.message.reply_text(t['admin_cancel'])
+            return
+        if update.message.text:
+            file_id = context.user_data.get('edit_file_id')
+            new_title = update.message.text.strip()[:255]
+            if not file_id or not new_title:
+                context.user_data['state'] = None
+                return await update.message.reply_text("❌ Xatolik.")
+            try:
+                await update_file_title(file_id, new_title)
+                context.user_data['state'] = None
+                context.user_data.pop('edit_file_id', None)
+                fd = await get_file_by_id(file_id)
+                if fd:
+                    cat = await get_category_by_id(fd['category_id']) if fd['category_id'] else None
+                    cat_name = f"{cat['icon']} {cat['name']}" if cat else "—"
+                    premium = "🔒 Yoqilgan" if fd['is_premium'] else "🔓 O'chirilgan"
+                    text = (t['admin_file_view_title'].format(title=fd['title']) + "\n\n" +
+                            t['admin_file_view_info'].format(
+                                cat_name=cat_name, icon=file_type_icon(fd['file_type']),
+                                ftype=fd['file_type'], premium=premium, fid=file_id))
+                    await update.message.reply_text(text, parse_mode='Markdown',
+                        reply_markup=get_admin_file_view_keyboard(lang, file_id, fd['is_premium'], fd['category_id'] or 0))
+            except Exception as e:
+                logging.error(f"edit title xato: {e}")
+                await update.message.reply_text("❌ Xatolik.")
+        return
+
+    # ============================================================
+    # ADMIN: PENDING VIDEO'GA FAYL BIRIKTIRISH
+    # ============================================================
     if user.id == ADMIN_ID and PENDING_VIDEOS:
         if update.message.document or update.message.video or update.message.photo or update.message.audio:
             last_msg_id = list(PENDING_VIDEOS.keys())[-1]
             fid, ft, fn = None, None, None
             if update.message.document:
-                fid = update.message.document.file_id
-                ft = 'document'
+                fid = update.message.document.file_id; ft = 'document'
                 fn = update.message.document.file_name or "file"
             elif update.message.video:
                 fid = update.message.video.file_id; ft = 'video'
@@ -1541,6 +2058,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='Markdown')
                 return
 
+    # ============================================================
+    # ADMIN: YANGI PAPKA YARATISH
+    # ============================================================
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_new_cat_name':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -1554,20 +2074,25 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['state'] = 'in_add_file'
                 text = t['admin_file_cat_created'].format(name=cat_name) + "\n\n" + t['admin_file_send_to'].format(cat_name=f"📁 {cat_name}")
                 await update.message.reply_text(text, parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_add_file")]]))
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_files_menu")]]))
             else:
                 await update.message.reply_text("❌ Xatolik.")
                 context.user_data['state'] = None
         return
 
+    # ============================================================
+    # ADMIN: PAPKAGA FAYL YUBORISH KUTILMOQDA
+    # ============================================================
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_add_file':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
             context.user_data.pop('selected_category', None)
+            context.user_data.pop('selected_category_name', None)
             await update.message.reply_text(t['admin_file_cancel']); return
-        if update.message.document or update.message.video or update.message.photo:
+        if update.message.document or update.message.video or update.message.photo or update.message.audio:
             if update.message.document: file_id = update.message.document.file_id; ftype = 'document'
             elif update.message.video: file_id = update.message.video.file_id; ftype = 'video'
+            elif update.message.audio: file_id = update.message.audio.file_id; ftype = 'audio'
             else: file_id = update.message.photo[-1].file_id; ftype = 'photo'
             context.user_data['temp_file_id'] = file_id
             context.user_data['temp_file_type'] = ftype
@@ -1578,10 +2103,14 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Fayl yuboring yoki /cancel bosing.")
         return
 
+    # ============================================================
+    # ADMIN: FAYL NOMI KUTILMOQDA
+    # ============================================================
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_file_title':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
             context.user_data.pop('selected_category', None)
+            context.user_data.pop('selected_category_name', None)
             await update.message.reply_text(t['admin_file_cancel']); return
         if update.message.text:
             title = update.message.text.strip()[:255]
@@ -1589,17 +2118,22 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ftype = context.user_data.get('temp_file_type')
             cat_id = context.user_data.get('selected_category')
             cat_name = context.user_data.get('selected_category_name', 'Papka')
-            await add_file_db_cat(title, file_id, ftype, cat_id, is_premium=False)
+            new_fid = await add_file_db_cat(title, file_id, ftype, cat_id, is_premium=False)
             context.user_data['state'] = None
             for k in ['selected_category', 'selected_category_name', 'temp_file_id', 'temp_file_type']:
                 context.user_data.pop(k, None)
             cat = await get_category_by_id(cat_id)
-            files = await get_files_by_category(cat_id)
-            text = f"✅ **Fayl saqlandi!**\n\n📂 {cat_name}\n📄 {title}\n\nPapkadagi barcha fayllar:"
+            total = await count_files_in_category(cat_id)
+            total_pages = max(1, (total + FILES_PER_PAGE - 1) // FILES_PER_PAGE)
+            files = await get_files_by_category_paginated(cat_id, 0)
+            text = f"✅ **Fayl saqlandi!**\n\n📂 {cat_name}\n📄 **{title}**\n\n📊 Papkada jami: **{total}** ta"
             await update.message.reply_text(text, parse_mode='Markdown',
-                reply_markup=get_category_files_keyboard(lang, files, cat_id, is_admin=True))
+                reply_markup=get_admin_files_cat_keyboard(lang, files, cat_id, 0, total_pages))
         return
 
+    # ============================================================
+    # DEVTOOLS
+    # ============================================================
     if context.user_data.get('state') == 'in_dev_pass':
         context.user_data['state'] = None
         if not update.message.text or not update.message.text.strip().isdigit():
@@ -1663,14 +2197,20 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(str(e)[:80], parse_mode='Markdown')
         return
 
+    # ============================================================
+    # AI / CHALLENGE
+    # ============================================================
     if context.user_data.get('state') == 'in_ai':
         await handle_ai_message(update, context); return
 
     if context.user_data.get('state') == 'in_challenge':
         await handle_challenge_solution(update, context); return
 
+    # ============================================================
+    # ADMIN: BALL BERISH
+    # ============================================================
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_admin_points':
-        if update.message.text.isdigit():
+        if update.message.text and update.message.text.isdigit():
             points = int(update.message.text)
             await add_score_all(points)
             msg = await update.message.reply_text(t['admin_points_wait'])
@@ -1691,6 +2231,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Raqam!")
         return
 
+    # ============================================================
+    # ADMIN: YANGILANISH
+    # ============================================================
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_admin_update':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -1714,12 +2257,18 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = None
         return
 
+    # ============================================================
+    # ADMIN: BROADCAST
+    # ============================================================
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_broadcast':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
             await update.message.reply_text(t['admin_bcast_cancel']); return
         await process_broadcast(update, context); return
 
+    # ============================================================
+    # SUPPORT
+    # ============================================================
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
             am = f"📩 Murojaat!\n\n👤 {user.first_name} (@{user.username})\n🆔 {user.id}\n\n💬 {update.message.text}"
@@ -1730,6 +2279,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = None
         return
 
+    # ============================================================
+    # ADMIN: SUPPORT JAVOB
+    # ============================================================
     if user.id == ADMIN_ID and update.message.reply_to_message:
         original = update.message.reply_to_message.text or ""
         m = re.search(r'🆔 (\d+)', original)
@@ -1756,7 +2308,7 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(f"✅ {success} | ❌ {fail}")
 
 # ==========================================
-# WEB SERVER (TO'LIQ TUZATILGAN)
+# WEB SERVER
 # ==========================================
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
@@ -1784,14 +2336,13 @@ p{color:#8b949e;line-height:1.7;margin:16px 0;}
 .status{display:inline-flex;align-items:center;gap:8px;background:#161b22;border:1px solid #30363d;padding:8px 20px;border-radius:20px;margin-top:24px;font-size:.9em;}
 .dot{width:8px;height:8px;background:#3fb950;border-radius:50%;animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
-a{color:#58a6ff;text-decoration:none;}
 </style>
 </head>
 <body>
 <div class="card">
 <h1>🤖 Termux Bot</h1>
 <p>Termux va Dasturlash bo'yicha yordamchi bot.<br>Python, LUA, AI va boshqa ko'p narsalar.</p>
-<div class="status"><span class="dot"></span> Bot faol ishlamoqda</div>
+<div class="status"><span class="dot"></span> Bot faol ishlayapti</div>
 </div>
 </body>
 </html>"""
@@ -1802,8 +2353,11 @@ async def on_startup():
     await application.initialize()
     if RENDER_EXTERNAL_URL:
         webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
-        await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print(f"✅ Bot ishga tushdi! Webhook: {webhook_url}")
+        try:
+            await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+            print(f"✅ Bot ishga tushdi! Webhook: {webhook_url}")
+        except Exception as e:
+            logging.error(f"Webhook xatosi: {e}")
     else:
         print("⚠️ RENDER_EXTERNAL_URL yo'q — webhook o'rnatilmadi")
 
