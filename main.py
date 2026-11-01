@@ -118,6 +118,7 @@ async def init_db():
                 last_challenge_date DATE DEFAULT '1970-01-01',
                 streak_days INT DEFAULT 0,
                 last_streak_date DATE DEFAULT '1970-01-01',
+                premium_until TIMESTAMP,
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
             await conn.execute('''CREATE TABLE IF NOT EXISTS files (
@@ -132,6 +133,7 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
             await conn.execute("ALTER TABLE files ADD COLUMN IF NOT EXISTS category_id INT")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP")
             await conn.execute("ALTER TABLE file_categories ADD COLUMN IF NOT EXISTS parent_id INT REFERENCES file_categories(id) ON DELETE CASCADE")
             await conn.execute('''CREATE TABLE IF NOT EXISTS updates_history (
                 id SERIAL PRIMARY KEY, title VARCHAR(255), description TEXT,
@@ -150,6 +152,16 @@ async def init_db():
                 file_type VARCHAR(20), file_name VARCHAR(255),
                 button_text VARCHAR(100) DEFAULT '📥 DASTURNI OLISH',
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+            await conn.execute('''CREATE TABLE IF NOT EXISTS lesson_entries (
+                id SERIAL PRIMARY KEY, track VARCHAR(20) NOT NULL,
+                lesson_number INT NOT NULL, source_type VARCHAR(20) NOT NULL,
+                source_id VARCHAR(255) NOT NULL, source_chat_id BIGINT,
+                attachment_file_id VARCHAR(255), attachment_type VARCHAR(20),
+                attachment_name VARCHAR(255), attachment_url TEXT,
+                button_text VARCHAR(100) DEFAULT '🐍 PYTHON OLISH',
+                title VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(track, lesson_number)
             )''')
         await ensure_default_categories()
     except Exception as e:
@@ -182,11 +194,12 @@ async def add_score_all(points):
 async def get_user_profile(user_id):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT score, last_bonus, is_premium, last_challenge_date, streak_days FROM users WHERE user_id = $1', user_id)
+        user = await conn.fetchrow('SELECT score, last_bonus, is_premium, premium_until, last_challenge_date, streak_days FROM users WHERE user_id = $1', user_id)
         if not user: return None
         rank = await conn.fetchval('SELECT COUNT(*) FROM users WHERE score > $1', user['score'])
+        active_premium = bool(user['is_premium'] and (not user['premium_until'] or user['premium_until'] > datetime.datetime.now()))
         return {"score": user['score'], "rank": rank + 1, "last_bonus": user['last_bonus'],
-                "is_premium": user['is_premium'], "last_challenge_date": user['last_challenge_date'],
+                "is_premium": active_premium, "last_challenge_date": user['last_challenge_date'],
                 "streak_days": user['streak_days'] or 0}
 
 async def update_challenge_date(user_id):
@@ -198,12 +211,12 @@ async def check_ai_limit(user_id, consume=False):
     if user_id == ADMIN_ID: return True, 999
     if not db_pool: return True, 999
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT is_premium, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
+        user = await conn.fetchrow('SELECT is_premium, premium_until, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
         if not user:
             await conn.execute('INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', user_id)
-            user = await conn.fetchrow('SELECT is_premium, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
+            user = await conn.fetchrow('SELECT is_premium, premium_until, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
         today = datetime.date.today()
-        if user['is_premium']: return True, 999
+        if user['is_premium'] and (not user['premium_until'] or user['premium_until'] > datetime.datetime.now()): return True, 999
         if user['last_ai_date'] < today:
             if consume:
                 await conn.execute('UPDATE users SET ai_requests_today = 1, last_ai_date = $1 WHERE user_id = $2', today, user_id)
@@ -220,7 +233,9 @@ async def check_ai_limit(user_id, consume=False):
 async def make_premium(user_id):
     if not db_pool: return
     async with db_pool.acquire() as conn:
-        await conn.execute('UPDATE users SET is_premium = TRUE WHERE user_id = $1', user_id)
+        await conn.execute('''UPDATE users SET is_premium = TRUE,
+            premium_until = GREATEST(COALESCE(premium_until, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP) + INTERVAL '30 days'
+            WHERE user_id = $1''', user_id)
 
 async def get_top_users():
     if not db_pool: return []
@@ -332,7 +347,36 @@ async def get_max_lesson_number():
         async with db_pool.acquire() as conn:
             db_max = await conn.fetchval('SELECT MAX(lesson_number) FROM auto_lessons')
             if db_max: max_num = max(max_num, db_max)
+            entry_max = await conn.fetchval("SELECT MAX(lesson_number) FROM lesson_entries WHERE track = 'termux'")
+            if entry_max: max_num = max(max_num, entry_max)
     return max_num
+
+async def get_lesson_entry(track, lesson_number):
+    if not db_pool: return None
+    async with db_pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM lesson_entries WHERE track = $1 AND lesson_number = $2', track, lesson_number)
+
+async def save_lesson_entry(track, lesson_number, source_type, source_id, source_chat_id=None, title=None):
+    if not db_pool: return False
+    async with db_pool.acquire() as conn:
+        await conn.execute('''INSERT INTO lesson_entries
+            (track, lesson_number, source_type, source_id, source_chat_id, title)
+            VALUES ($1,$2,$3,$4,$5,$6)
+            ON CONFLICT (track, lesson_number) DO UPDATE SET
+            source_type=EXCLUDED.source_type, source_id=EXCLUDED.source_id,
+            source_chat_id=EXCLUDED.source_chat_id, title=EXCLUDED.title''',
+            track, lesson_number, source_type, str(source_id), source_chat_id, title)
+    return True
+
+async def save_lesson_attachment(track, lesson_number, file_id=None, file_type=None,
+                                 file_name=None, url=None, button_text='🐍 PYTHON OLISH'):
+    if not db_pool: return False
+    async with db_pool.acquire() as conn:
+        await conn.execute('''UPDATE lesson_entries SET attachment_file_id=$1,
+            attachment_type=$2, attachment_name=$3, attachment_url=$4, button_text=$5
+            WHERE track=$6 AND lesson_number=$7''', file_id, file_type, file_name, url,
+            button_text[:100], track, lesson_number)
+    return True
 
 def get_level(score):
     if score < 100: return "🥉 Boshlovchi"
@@ -683,6 +727,7 @@ def get_admin_keyboard(lang, af_status="off"):
         [InlineKeyboardButton(t['admin_btn_bcast'], callback_data="admin_bcast")],
         [InlineKeyboardButton(t['admin_btn_update'], callback_data="admin_update")],
         [InlineKeyboardButton(t['admin_btn_points'], callback_data="admin_points")],
+        [InlineKeyboardButton("📚 Darslik boshqaruvi", callback_data="admin_lesson_add")],
         [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_add_file")],
         [InlineKeyboardButton(af_text, callback_data="admin_toggle_autofwd")],
         [InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_close")]
@@ -723,10 +768,10 @@ def get_lessons_keyboard(page, lang, max_lesson=47):
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_lua_lessons_keyboard(lang):
+def get_lua_lessons_keyboard(lang, max_lesson=50):
     t = TEXTS[lang]
     keyboard, row = [], []
-    for i in range(1, 9):
+    for i in range(1, max_lesson + 1):
         row.append(InlineKeyboardButton(f"🎬 {i}-darslik", callback_data=f"lua_lesson_{i}"))
         if len(row) == 2: keyboard.append(row); row = []
     if row: keyboard.append(row)
@@ -883,8 +928,9 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if file_data['is_premium'] and user_id != ADMIN_ID:
             if not db_pool: return
             async with db_pool.acquire() as conn:
-                user = await conn.fetchrow('SELECT is_premium FROM users WHERE user_id = $1', user_id)
-            if not user or not user['is_premium']:
+                user = await conn.fetchrow('SELECT is_premium, premium_until FROM users WHERE user_id = $1', user_id)
+            active = bool(user and user['is_premium'] and (not user['premium_until'] or user['premium_until'] > datetime.datetime.now()))
+            if not active:
                 return await query.answer(t['file_premium_locked'], show_alert=True)
         await query.answer(t['file_sending'])
         try:
@@ -913,6 +959,22 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         categories = await get_all_categories()
         text = t['admin_file_choose_cat'] if categories else t['admin_file_no_cats']
         await edit_or_send(query, context, text, get_admin_file_categories_keyboard(lang, categories))
+
+    elif data == "admin_lesson_add":
+        if user_id != ADMIN_ID: return
+        context.user_data['state'] = 'in_lesson_track'
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📽️ TERMUX DARSLIKLAR", callback_data="admin_lesson_track_termux")],
+            [InlineKeyboardButton("📽️ LUA PAK DARSLIKLAR", callback_data="admin_lesson_track_lua")],
+            [InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]
+        ])
+        await edit_or_send(query, context, "📚 **Darslik qo'shish**\n\nQaysi bo'limga qo'shasiz?", kb)
+
+    elif data in ("admin_lesson_track_termux", "admin_lesson_track_lua"):
+        if user_id != ADMIN_ID: return
+        context.user_data['lesson_track'] = data.rsplit('_', 1)[-1]
+        context.user_data['state'] = 'in_lesson_number'
+        await edit_or_send(query, context, "🔢 Darslik raqamini yuboring (1-999):", InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_lesson_add")]]))
 
     elif data.startswith("admin_file_cat_"):
         if user_id != ADMIN_ID: return
@@ -1285,6 +1347,22 @@ color15=#ffffff
 
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
+        entry = await get_lesson_entry('termux', lesson_num)
+        if entry:
+            try:
+                if entry['source_type'] == 'channel':
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']))
+                else:
+                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 {lesson_num}-darslik")
+                if entry['attachment_url']:
+                    await context.bot.send_message(chat_id=chat_id, text="🐍 Python fayli:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(entry['button_text'] or "🐍 PYTHON OLISH", url=entry['attachment_url'])]]))
+                elif entry['attachment_file_id']:
+                    await context.bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "🐍 Python")
+                await query.message.delete()
+            except Exception as exc:
+                logging.error("Termux darslik xatosi: %s", exc)
+                await query.answer("❌ Video topilmadi", show_alert=True)
+            return
         all_lessons = await get_all_lessons()
         message_id = all_lessons.get(lesson_num, lesson_num + 2)
         kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_lessons_menu'], callback_data="page_1")]])
@@ -1299,6 +1377,24 @@ color15=#ffffff
         await edit_or_send(query, context, t['text_lua'], get_lua_lessons_keyboard(lang))
     elif data.startswith("lua_lesson_"):
         lesson_num = int(data.split("_")[2])
+        entry = await get_lesson_entry('lua', lesson_num)
+        if entry:
+            try:
+                if entry['source_type'] == 'channel':
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']))
+                else:
+                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 Lua {lesson_num}-darslik")
+                if entry['attachment_url']:
+                    await context.bot.send_message(chat_id=chat_id, text="🐍 Python fayli:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(entry['button_text'] or "🐍 PYTHON OLISH", url=entry['attachment_url'])]]))
+                elif entry['attachment_file_id']:
+                    await context.bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "🐍 Python")
+                await query.message.delete()
+            except Exception as exc:
+                logging.error("Lua darslik xatosi: %s", exc)
+                await query.answer("❌ Video topilmadi", show_alert=True)
+            return
+        if lesson_num not in LUA_LESSONS:
+            return await query.answer("ℹ️ Bu darslik hali qo'shilmagan.", show_alert=True)
         message_id = LUA_LESSONS.get(lesson_num, 93)
         buttons = []
         if lesson_num == 8: buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
@@ -1659,6 +1755,65 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"**/done** yoki 10 daqiqa kuting.",
                     parse_mode='Markdown')
                 return
+
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_lesson_number':
+        if not update.message.text or not update.message.text.strip().isdigit():
+            await update.message.reply_text("❌ 1 dan 999 gacha raqam yuboring.")
+            return
+        number = int(update.message.text.strip())
+        if not 1 <= number <= 999:
+            await update.message.reply_text("❌ Raqam 1-999 oralig'ida bo'lsin.")
+            return
+        context.user_data['lesson_number'] = number
+        context.user_data['state'] = 'in_lesson_video'
+        await update.message.reply_text("🎥 Video yuboring yoki kanal postini shu yerga forward qiling.\n\nBekor qilish: /cancel")
+        return
+
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_lesson_video':
+        if update.message.text == '/cancel':
+            context.user_data['state'] = None
+            await update.message.reply_text("❌ Darslik qo'shish bekor qilindi.")
+            return
+        if not update.message.video:
+            await update.message.reply_text("⚠️ Faqat video yuboring yoki kanal videosini forward qiling.")
+            return
+        track = context.user_data.get('lesson_track')
+        number = context.user_data.get('lesson_number')
+        source_type, source_id, source_chat_id = 'file', update.message.video.file_id, None
+        origin = getattr(update.message, 'forward_origin', None)
+        if origin and getattr(origin, 'message_id', None) and getattr(origin, 'chat', None):
+            source_type, source_id, source_chat_id = 'channel', origin.message_id, origin.chat.id
+        elif getattr(update.message, 'forward_from_chat', None) and getattr(update.message, 'forward_from_message_id', None):
+            source_type, source_id, source_chat_id = 'channel', update.message.forward_from_message_id, update.message.forward_from_chat.id
+        await save_lesson_entry(track, number, source_type, source_id, source_chat_id, update.message.caption)
+        context.user_data['state'] = 'in_lesson_attachment'
+        await update.message.reply_text("✅ Video saqlandi.\n\n🐍 Python tugmasi kerakmi? Python faylini yuboring yoki link (https://...) jo'nating. Kerak emas bo'lsa /skip yozing.")
+        return
+
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_lesson_attachment':
+        track = context.user_data.get('lesson_track')
+        number = context.user_data.get('lesson_number')
+        if update.message.text == '/skip' or update.message.text == '/cancel':
+            context.user_data['state'] = None
+            await update.message.reply_text("✅ Darslik video sifatida saqlandi.")
+            return
+        if update.message.text:
+            url = update.message.text.strip()
+            if not re.match(r'^https?://', url, re.IGNORECASE):
+                await update.message.reply_text("❌ Faqat http:// yoki https:// link yuboring.")
+                return
+            await save_lesson_attachment(track, number, url=url)
+            context.user_data['state'] = None
+            await update.message.reply_text("✅ Python linki darslik tagiga qo'shildi.")
+            return
+        if update.message.document:
+            await save_lesson_attachment(track, number, file_id=update.message.document.file_id,
+                                         file_type='document', file_name=update.message.document.file_name)
+            context.user_data['state'] = None
+            await update.message.reply_text("✅ Python fayli darslik tagiga qo'shildi.")
+            return
+        await update.message.reply_text("⚠️ Python fayli, https:// link yoki /skip yuboring.")
+        return
 
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_new_cat_name':
         if update.message.text == "/cancel":
