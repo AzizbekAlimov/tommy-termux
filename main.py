@@ -4,6 +4,7 @@ import random
 import aiohttp
 import re
 import asyncio
+import time
 import asyncpg
 import datetime
 import hashlib
@@ -56,6 +57,8 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 db_pool = None
 PENDING_VIDEOS = {}
 AUTO_ADD_TIMEOUT = 600
+SUBSCRIPTION_CACHE = {}
+SUBSCRIPTION_CACHE_TTL = 60
 
 # ==========================================
 # YORDAMCHI
@@ -343,9 +346,15 @@ async def claim_streak(user_id):
 
 async def is_subscribed(user_id, context):
     if user_id == ADMIN_ID: return True
+    now = time.monotonic()
+    cached = SUBSCRIPTION_CACHE.get(user_id)
+    if cached and now - cached[1] < SUBSCRIPTION_CACHE_TTL:
+        return cached[0]
     try:
         member = await context.bot.get_chat_member(chat_id=FORCE_SUB_CHANNEL, user_id=user_id)
-        return member.status in ['member', 'administrator', 'creator']
+        result = member.status in ['member', 'administrator', 'creator']
+        SUBSCRIPTION_CACHE[user_id] = (result, now)
+        return result
     except Exception:
         return True
 
@@ -764,6 +773,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = TEXTS[lang]
 
     if data == "check_sub":
+        SUBSCRIPTION_CACHE.pop(user_id, None)
         if await is_subscribed(user_id, context):
             await query.answer("✅")
             await query.message.delete()
@@ -1804,7 +1814,7 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 # WEB SERVER (TO'LIQ TUZATILGAN)
 # ==========================================
-application = Application.builder().token(TOKEN).build()
+application = Application.builder().token(TOKEN).concurrent_updates(16).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("admin", admin_panel))
 application.add_handler(CommandHandler("done", done_command))
@@ -1846,6 +1856,7 @@ a{color:#58a6ff;text-decoration:none;}
 async def on_startup():
     await init_db()
     await application.initialize()
+    await application.start()
     if RENDER_EXTERNAL_URL:
         webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
         await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
@@ -1855,6 +1866,8 @@ async def on_startup():
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    if application.running:
+        await application.stop()
     await application.shutdown()
     if db_pool: await db_pool.close()
 
@@ -1863,7 +1876,9 @@ async def telegram_webhook(request: Request):
     try:
         data = await request.json()
         update = Update.de_json(data, application.bot)
-        await application.process_update(update)
+        # Telegram'ga handler tugashini kutdirmaymiz: og'ir fayl/AI/broadcast
+        # ishlari webhook javobini bloklamaydi.
+        asyncio.create_task(application.process_update(update))
     except Exception as e:
         logging.error(f"Webhook xato: {e}")
     return {"status": "ok"}
