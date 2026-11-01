@@ -393,7 +393,6 @@ TEXTS = {
 
         'java_info_text': "☕ **Termux'da Java Dasturlash**\n\nJava — kuchli va keng tarqalgan til. Termux'da buni sozlash juda oson!\n\n**1. Java (JDK) o'rnatish:**\n`pkg install openjdk-17 -y`\n\n**2. Tekshirish:**\n`java -version`\n`javac -version`\n\n**3. Fayl ochish:**\n_(Diqqat: fayl nomi katta harf bilan boshlanadi!)_\n`nano Salom.java`\n\n**4. Ichiga kod yozing:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n_(Saqlash: CTRL+X, keyin Y, keyin Enter)_\n\n**5. Kompilyatsiya qilish va ishga tushirish:**\n`javac Salom.java`\n`java Salom`",
 
-        # YANGI
         'btn_devtools': "🧰 Developer Tools",
         'streak_btn': "🔥 Kunlik Streak",
         'devtools_menu': "🧰 **Developer Tools Pack**\n\nKerakli asbobni tanlang:",
