@@ -360,6 +360,11 @@ async def get_lesson_entry(track, lesson_number):
     async with db_pool.acquire() as conn:
         return await conn.fetchrow('SELECT * FROM lesson_entries WHERE track = $1 AND lesson_number = $2', track, lesson_number)
 
+async def get_lesson_entry_by_id(entry_id):
+    if not db_pool: return None
+    async with db_pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM lesson_entries WHERE id = $1', entry_id)
+
 async def get_max_lua_lesson_number():
     max_num = max(LUA_LESSONS.keys())
     if db_pool:
@@ -411,6 +416,16 @@ async def send_lesson_attachment(bot, chat_id, entry):
         await bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "📥 Fayl")
         return True
     return False
+
+def get_lesson_attachment_keyboard(entry, lesson_callback):
+    """Video ostiga faylni keyinroq bot orqali yuboradigan tugma qo'yadi."""
+    if not (entry['attachment_url'] or entry['attachment_file_id']):
+        return InlineKeyboardMarkup([[InlineKeyboardButton("📚 Darsliklar", callback_data=lesson_callback)]])
+    label = entry['button_text'] or get_file_button_info(entry['attachment_name'], entry['attachment_type'] or 'document')
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(label, callback_data=f"lesson_attach_{entry['id']}")],
+        [InlineKeyboardButton("📚 Darsliklar", callback_data=lesson_callback)]
+    ])
 
 def get_level(score):
     if score < 100: return "🥉 Boshlovchi"
@@ -1409,12 +1424,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry = await get_lesson_entry('termux', lesson_num)
         if entry:
             try:
+                lesson_kb = get_lesson_attachment_keyboard(entry, "page_1")
                 if entry['source_type'] == 'channel':
-                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']))
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']), reply_markup=lesson_kb)
                 else:
-                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 {lesson_num}-darslik")
-                if entry['attachment_url'] or entry['attachment_file_id']:
-                    await send_lesson_attachment(context.bot, chat_id, entry)
+                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 {lesson_num}-darslik", reply_markup=lesson_kb)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Termux darslik xatosi: %s", exc)
@@ -1438,12 +1452,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry = await get_lesson_entry('lua', lesson_num)
         if entry:
             try:
+                lesson_kb = get_lesson_attachment_keyboard(entry, "lua_page_1")
                 if entry['source_type'] == 'channel':
-                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']))
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']), reply_markup=lesson_kb)
                 else:
-                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 Lua {lesson_num}-darslik")
-                if entry['attachment_url'] or entry['attachment_file_id']:
-                    await send_lesson_attachment(context.bot, chat_id, entry)
+                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 Lua {lesson_num}-darslik", reply_markup=lesson_kb)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Lua darslik xatosi: %s", exc)
@@ -1465,6 +1478,40 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError as e:
             logging.error(f"Lua xato: {e}")
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
+    elif data.startswith("lesson_attach_"):
+        try:
+            entry_id = int(data.replace("lesson_attach_", ""))
+            entry = await get_lesson_entry_by_id(entry_id)
+            if not entry:
+                return await query.answer("❌ Fayl topilmadi", show_alert=True)
+            await query.answer("⏳ Fayl tayyorlanmoqda...")
+            if entry['attachment_file_id']:
+                await context.bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=f"📥 {entry['attachment_name'] or 'Fayl'}")
+            elif entry['attachment_url']:
+                url = entry['attachment_url'].strip()
+                channel_match = re.match(r'^https?://t\.me/([^/?#]+)/([0-9]+)', url, re.IGNORECASE)
+                if channel_match:
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id='@' + channel_match.group(1).lstrip('@'), message_id=int(channel_match.group(2)))
+                else:
+                    timeout = aiohttp.ClientTimeout(total=90, connect=10)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(url, allow_redirects=True) as response:
+                            if response.status != 200:
+                                raise RuntimeError(f"HTTP {response.status}")
+                            size = int(response.headers.get('Content-Length', '0') or 0)
+                            if size > 60 * 1024 * 1024:
+                                raise RuntimeError('Fayl juda katta')
+                            content = await response.read()
+                            if len(content) > 60 * 1024 * 1024:
+                                raise RuntimeError('Fayl juda katta')
+                            filename = url.split('?', 1)[0].rstrip('/').split('/')[-1] or 'downloaded_file'
+                            file_obj = BytesIO(content); file_obj.name = filename[:120]
+                            await context.bot.send_document(chat_id=chat_id, document=file_obj, caption=f"📥 {filename[:120]}")
+            else:
+                await query.answer("❌ Fayl biriktirilmagan", show_alert=True)
+        except Exception as exc:
+            logging.error("Darslik faylini yuborishda xato: %s", exc)
+            await query.answer("❌ Faylni yuborib bo'lmadi", show_alert=True)
     elif data.startswith("lua_file_"):
         # Foydalanuvchi kanalga kirmaydi: fayl kanal postidan bot chatiga ko'chiriladi.
         try:
@@ -1569,10 +1616,18 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_query, image_bytes, is_image = "", None, False
         if update.message.text:
-            user_query = update.message.text
+            user_query = update.message.text.strip()
             if len(user_query) < 15 and user_query.lower() in ['salom', 'assalom', 'hi', 'hello']:
                 await msg.edit_text(t['ai_not_coding']); return
             if len(user_query) > 80000: await msg.edit_text(t['ai_text_too_long']); return
+            previous_code = context.user_data.get('ai_last_code', '')
+            previous_name = context.user_data.get('ai_last_filename', 'code.py')
+            short_fix = user_query.lower() in ('tuzatib ber', 'tuzat', 'fix', 'fix it', 'tekshir', 'xatoni tuzat')
+            if previous_code and (short_fix or len(user_query) < 25):
+                user_query = (f"Foydalanuvchi so'rovi: {user_query}\n\n"
+                              f"Oldingi fayl ({previous_name}) kodi:\n{previous_code}\n\n"
+                              "Vazifa: kodni to'liq tekshir, xatolarini top, tuzatilgan to'liq faylni qaytar. "
+                              "Qaysi xato va nima o'zgarganini o'zbekcha tushuntir.")
         elif update.message.photo:
             f = await update.message.photo[-1].get_file()
             image_bytes = await f.download_as_bytearray()
@@ -1580,13 +1635,19 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_query = "Fix this code error from image."
         elif update.message.document:
             doc = update.message.document
-            if doc.file_size > 500 * 1024: await msg.edit_text(t['ai_file_too_large']); return
-            if doc.file_name.endswith(('.py', '.lua', '.txt', '.js', '.cpp', '.c', '.html', '.java')):
+            if (doc.file_size or 0) > 2 * 1024 * 1024: await msg.edit_text(t['ai_file_too_large']); return
+            doc_name = (doc.file_name or 'code.txt').lower()
+            code_exts = ('.py', '.lua', '.txt', '.js', '.ts', '.jsx', '.tsx', '.cpp', '.c', '.h', '.html', '.css', '.java', '.kt', '.sh', '.bash', '.json', '.xml', '.yaml', '.yml', '.sql', '.php', '.rb', '.go', '.rs')
+            if doc_name.endswith(code_exts):
                 content = await (await doc.get_file()).download_as_bytearray()
                 try:
                     text_content = content.decode('utf-8')
                     if len(text_content) > 80000: await msg.edit_text(t['ai_text_too_long']); return
-                    user_query = f"File: {doc.file_name}\n\n{text_content}\n\nFix this code."
+                    filename = doc.file_name or 'code.txt'
+                    context.user_data['ai_last_code'] = text_content
+                    context.user_data['ai_last_filename'] = filename
+                    context.user_data['ai_last_language'] = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'text'
+                    user_query = f"Fayl: {filename}\n\n{text_content}\n\nKodni to'liq tahlil qil va foydalanuvchi tilida tuzat."
                 except UnicodeDecodeError: await msg.edit_text(t['ai_unsupported_file']); return
             else: await msg.edit_text(t['ai_unsupported_file']); return
         else: await msg.edit_text(t['ai_video_error']); return
@@ -1596,7 +1657,14 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text(t['ai_limit_reached'])
             return
         ai_reply = ""
-        sys_prompt = "You are an expert Software Engineer. Write/fix code. Reply in markdown code blocks. Reply in user's language."
+        sys_prompt = """Siz Termux va dasturlash bo'yicha professional AI Dasturchisiz.
+Foydalanuvchi asosan o'zbek tilida yozadi: javobni har doim o'zbek tilida bering, inglizcha umumiy rad javoblari yozmang.
+Python, Lua, Java, JavaScript, C/C++, Bash, Termux, Linux va Telegram bot kodlarini tushuning.
+Kod berilganda uni to'liq o'qing: sintaksis, importlar, async/await, database, Telegram API, xavfsizlik va edge-case'larni tekshiring.
+"Tuzatib ber", "tekshir" yoki qisqa so'rov kelsa, xabarga qo'shilgan oldingi kodni asosiy kontekst sifatida ishlating.
+Tuzatilgan kodni to'liq markdown code block ichida qaytaring; qisqartirmang va "..." bilan tashlab ketmang.
+Koddan keyin: 1) topilgan xatolar, 2) kiritilgan tuzatishlar, 3) ishga tushirish buyrug'ini qisqa o'zbekcha yozing.
+Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xavfsiz va himoyaga yo'naltirilgan variant bering."""
 
         if is_image and gemini_client:
             try:
@@ -1628,7 +1696,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not ai_reply and gemini_client and not is_image:
             try:
-                r = await gemini_client.aio.models.generate_content(model='gemini-1.5-flash', contents=user_query)
+                r = await gemini_client.aio.models.generate_content(model='gemini-1.5-flash', contents=f"{sys_prompt}\n\n{user_query}")
                 ai_reply = r.text
             except Exception as e: logging.error(f"Gemini: {e}")
 
@@ -1640,7 +1708,13 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             code_text = code_match.group(1).strip()
             if "lua" in user_query.lower(): fn = "code.lua"; ln = "Lua"
             elif "java" in user_query.lower(): fn = "Main.java"; ln = "Java"
+            elif context.user_data.get('ai_last_language') in ('lua', 'js', 'javascript', 'java', 'cpp', 'c'):
+                ext = context.user_data['ai_last_language']
+                fn = f"code.{ext if ext != 'javascript' else 'js'}"; ln = ext.upper()
             else: fn = "code.py"; ln = "Python"
+            context.user_data['ai_last_code'] = code_text
+            context.user_data['ai_last_filename'] = fn
+            context.user_data['ai_last_language'] = fn.rsplit('.', 1)[-1].lower()
             cf = BytesIO(code_text.encode('utf-8')); cf.name = fn
             await context.bot.send_document(chat_id=update.message.chat_id, document=cf, caption=f"🤖 {ln}: {fn}")
             expl = ai_reply.replace(code_match.group(0), "").strip()
@@ -1649,7 +1723,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.edit_text(t['ai_no_code'].format(text=ai_reply))
     except Exception as e:
-        await msg.edit_text(t['ai_error'].format(error=str(e)[:100]))
+        logging.exception("AI handler xatosi")
+        try:
+            await msg.edit_text("❌ AI vaqtincha javob bera olmadi. So'rovni qayta yuboring; yuborgan kodingiz konteksti saqlangan.")
+        except Exception:
+            pass
 
 # ==========================================
 # CHALLENGE
