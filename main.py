@@ -43,6 +43,7 @@ ADMIN_ID = 7383782449
 FORCE_SUB_CHANNEL = "@Tommy_cheat"
 VIDEO_CHANNEL = "@termux_tutoril"
 TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_arm64-v8a.apk"
+TERMUX_RELEASES_API = "https://api.github.com/repos/termux/termux-app/releases/latest"
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -83,6 +84,22 @@ def get_file_button_info(file_name, file_type):
     elif file_type == 'video': return "🎥 VIDEONI OLISH"
     elif file_type == 'photo': return "🖼 RASMNI OLISH"
     return "📥 FAYLNI OLISH"
+
+async def get_latest_termux_apk_url():
+    """Rasmiy GitHub release'dan mos APKni topadi; API ishlamasa fallback ishlaydi."""
+    try:
+        timeout = aiohttp.ClientTimeout(total=15, connect=5)
+        async with aiohttp.ClientSession(timeout=timeout, headers={'Accept': 'application/vnd.github+json'}) as session:
+            async with session.get(TERMUX_RELEASES_API) as response:
+                if response.status == 200:
+                    release = await response.json()
+                    assets = release.get('assets', [])
+                    preferred = [a for a in assets if 'arm64-v8a.apk' in a.get('name', '') and 'github' in a.get('name', '')]
+                    if preferred:
+                        return preferred[0].get('browser_download_url') or TERMUX_APK_URL
+    except Exception as exc:
+        logging.warning('Termux release aniqlanmadi: %s', exc)
+    return TERMUX_APK_URL
 
 # ==========================================
 # BAZA
@@ -177,18 +194,26 @@ async def update_challenge_date(user_id):
     async with db_pool.acquire() as conn:
         await conn.execute('UPDATE users SET last_challenge_date = $1 WHERE user_id = $2', datetime.date.today(), user_id)
 
-async def check_ai_limit(user_id):
+async def check_ai_limit(user_id, consume=False):
     if user_id == ADMIN_ID: return True, 999
     if not db_pool: return True, 999
     async with db_pool.acquire() as conn:
         user = await conn.fetchrow('SELECT is_premium, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
+        if not user:
+            await conn.execute('INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', user_id)
+            user = await conn.fetchrow('SELECT is_premium, ai_requests_today, last_ai_date FROM users WHERE user_id = $1', user_id)
         today = datetime.date.today()
         if user['is_premium']: return True, 999
         if user['last_ai_date'] < today:
-            await conn.execute('UPDATE users SET ai_requests_today = 1, last_ai_date = $1 WHERE user_id = $2', today, user_id)
+            if consume:
+                await conn.execute('UPDATE users SET ai_requests_today = 1, last_ai_date = $1 WHERE user_id = $2', today, user_id)
             return True, 4
         if user['ai_requests_today'] < 5:
-            await conn.execute('UPDATE users SET ai_requests_today = ai_requests_today + 1 WHERE user_id = $1', user_id)
+            if consume:
+                updated = await conn.fetchrow('''UPDATE users SET ai_requests_today = ai_requests_today + 1
+                    WHERE user_id = $1 AND ai_requests_today < 5 RETURNING ai_requests_today''', user_id)
+                if not updated: return False, 0
+                return True, 5 - updated['ai_requests_today']
             return True, 5 - user['ai_requests_today']
         return False, 0
 
@@ -326,23 +351,26 @@ def get_streak_reward(days):
 async def claim_streak(user_id):
     if not db_pool: return False, 0, 0, False, False
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT streak_days, last_streak_date FROM users WHERE user_id = $1', user_id)
-        if not user: return False, 0, 0, False, False
-        today = datetime.date.today()
-        last_date = user['last_streak_date']
-        current_streak = user['streak_days'] or 0
-        if last_date == today: return False, current_streak, 0, False, True
-        yesterday = today - datetime.timedelta(days=1)
-        if last_date == yesterday:
-            new_streak = current_streak + 1; is_reset = False
-        else:
-            new_streak = 1; is_reset = (current_streak > 0)
-        reward = get_streak_reward(new_streak)
-        await conn.execute('UPDATE users SET streak_days = $1, last_streak_date = $2, score = score + $3 WHERE user_id = $4',
-                           new_streak, today, reward, user_id)
-        if new_streak == 30:
-            await conn.execute('UPDATE users SET is_premium = TRUE WHERE user_id = $1', user_id)
-        return True, new_streak, reward, is_reset, False
+        async with conn.transaction():
+            user = await conn.fetchrow('SELECT streak_days, last_streak_date FROM users WHERE user_id = $1 FOR UPDATE', user_id)
+            if not user:
+                await conn.execute('INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', user_id)
+                user = await conn.fetchrow('SELECT streak_days, last_streak_date FROM users WHERE user_id = $1 FOR UPDATE', user_id)
+            today = datetime.date.today()
+            last_date = user['last_streak_date']
+            current_streak = user['streak_days'] or 0
+            if last_date == today: return False, current_streak, 0, False, True
+            yesterday = today - datetime.timedelta(days=1)
+            if last_date == yesterday:
+                new_streak = current_streak + 1; is_reset = False
+            else:
+                new_streak = 1; is_reset = (current_streak > 0)
+            reward = get_streak_reward(new_streak)
+            await conn.execute('UPDATE users SET streak_days = $1, last_streak_date = $2, score = score + $3 WHERE user_id = $4',
+                               new_streak, today, reward, user_id)
+            if new_streak == 30:
+                await conn.execute('UPDATE users SET is_premium = TRUE WHERE user_id = $1', user_id)
+            return True, new_streak, reward, is_reset, False
 
 async def is_subscribed(user_id, context):
     if user_id == ADMIN_ID: return True
@@ -480,8 +508,10 @@ TEXTS = {
         'btn_next_quiz': "➡️ Keyingi",
         'sec_menu': "🛡️ **Kiberxavfsizlik**\n\n⚠️ Faqat o'z tizimingizda!",
         'sec_info': "🔍 Ma'lumot", 'sec_pass': "🔑 Parol", 'sec_exploit': "💥 Zaiflik", 'sec_network': "📡 Tarmoq",
-        'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`",
-        'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`",
+        'sec_info_text': "🔍 **Recon va inventarizatsiya**\n\nFaqat o'zingizga tegishli qurilma yoki yozma ruxsat berilgan labda ishlating.\n\n`pkg install nmap`\n`nmap -sV 127.0.0.1` — faqat lokal test.\n\nHimoya: xizmatlarni yangilang, keraksiz portlarni yoping, firewall va log monitoringni yoqing.",
+        'sec_pass_text': "🔑 **Hisoblar xavfsizligi**\n\nParolni taxmin qilish yoki begona hisobni tekshirish mumkin emas. O'z labingizda parol siyosati va rate-limitni sinang.\n\n`pkg install openssh`\n`ssh-keygen -t ed25519` — xavfsiz SSH kaliti.\n\nParol, token va private key'ni botga yoki Git'ga yubormang.",
+        'sec_exploit_text': "🛡️ **Zaifliklarni boshqarish**\n\nExploitni real tizimga qarshi ishlatmang. Avval backup, scope va yozma ruxsat bo'lsin.\n\nYangilash: `pkg update && pkg upgrade`\nKodda: input validation, parametrli SQL, CSRF himoyasi va dependency audit.\n\nSQL injection haqida o'rganish uchun faqat lokal DVWA/CTF labidan foydalaning.",
+        'sec_network_text': "📡 **Tarmoq himoyasi**\n\n`pkg install tshark`\n`termux-job-scheduler` va loglar bilan monitoring qiling.\n\nBegona trafikni ushlash noqonuniy bo'lishi mumkin. O'z tarmog'ingizda TLS, MFA, segmentatsiya va minimal huquqni qo'llang.",
         'admin_bcast_start': "📢 Xabar yuboring:", 'admin_bcast_wait': "⏳...", 'admin_bcast_done': "✅ {success}, ❌ {fail}", 'admin_bcast_cancel': "❌ Bekor",
         'ai_prompt': "🤖 **AI Dasturchi**\n\nTopshiriq bering yoki kod yuboring.",
         'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅",
@@ -512,11 +542,22 @@ for other_lang in ['ru', 'en', 'ar']:
     TEXTS[other_lang] = {k: v for k, v in TEXTS['uz'].items()}
     TEXTS[other_lang]['choose_lang'] = "🌐 Select language" if other_lang == 'en' else ("🌐 Выберите язык" if other_lang == 'ru' else "🌐 اختر اللغة")
 
-TIPS = [{'uz': "**Tezroq kod:**\n`nano` o'rniga `micro` ishlating.", 'ru': "`micro`", 'en': "`micro`", 'ar': "`micro`"}]
-COMMANDS_DATA = {'files': [('ls', {'uz': 'Fayllar', 'ru': 'Файлы', 'en': 'Files', 'ar': 'ملفات'})],
-                 'packages': [('pkg update', {'uz': 'Yangilash', 'ru': 'Обновить', 'en': 'Update', 'ar': 'تحديث'})],
-                 'network': [('ping google.com', {'uz': 'Tekshirish', 'ru': 'Проверить', 'en': 'Check', 'ar': 'فحص'})],
-                 'system': [('clear', {'uz': 'Tozalash', 'ru': 'Очистить', 'en': 'Clear', 'ar': 'مسح'})]}
+TIPS = [
+    {'uz': "**Xavfsiz yangilash:**\n`pkg update && pkg upgrade` ni vaqti-vaqti bilan bajaring.", 'ru': "**Обновление:**\nПериодически запускайте `pkg update && pkg upgrade`.", 'en': "**Update safely:**\nRun `pkg update && pkg upgrade` regularly.", 'ar': "**تحديث آمن:**\nشغّل `pkg update && pkg upgrade` دورياً."},
+    {'uz': "**Fayl qidirish:**\n`find . -name '*.py'` joriy papkadagi Python fayllarni topadi.", 'ru': "Ищите файлы через `find`.", 'en': "Use `find` to search files.", 'ar': "استخدم `find` للبحث عن الملفات."},
+    {'uz': "**Zaxira:**\nMuhim kodni Git'ga yuboring va token/parolni kod ichida saqlamang.", 'ru': "Не храните секреты в коде.", 'en': "Never store secrets in source code.", 'ar': "لا تحفظ الأسرار داخل الكود."},
+    {'uz': "**Python muhit:**\n`python -m venv .venv && source .venv/bin/activate` paketlarni ajratadi.", 'ru': "Используйте venv.", 'en': "Use a virtual environment.", 'ar': "استخدم بيئة افتراضية."},
+    {'uz': "**Tez diagnostika:**\n`termux-info`, `df -h`, `free -h` bilan Termux holatini tekshiring.", 'ru': "Проверяйте состояние Termux.", 'en': "Check Termux health with diagnostics.", 'ar': "تحقق من حالة Termux."},
+    {'uz': "**Xavfsizlik:**\nNoma'lum `curl | bash` skriptini tekshirmasdan ishga tushirmang.", 'ru': "Проверяйте удалённые скрипты.", 'en': "Inspect remote scripts before running them.", 'ar': "افحص السكربتات البعيدة قبل تشغيلها."},
+    {'uz': "**Log:**\nXatoni topish uchun `python -m traceback` va dastur loglaridan foydalaning.", 'ru': "Используйте логи.", 'en': "Use logs to diagnose errors.", 'ar': "استخدم السجلات للتشخيص."},
+    {'uz': "**Git:**\n`git status`, `git diff`, keyin `git commit` — o'zgarishlarni nazorat qiling.", 'ru': "Контролируйте изменения Git.", 'en': "Review changes with Git.", 'ar': "راجع تغييرات Git."}
+]
+COMMANDS_DATA = {
+    'files': [('pwd', {'uz': 'Joriy manzil', 'ru': 'Текущий путь', 'en': 'Current path', 'ar': 'المسار الحالي'}), ('ls -la', {'uz': 'Yashirin fayllar bilan ro‘yxat', 'ru': 'Список файлов', 'en': 'List all files', 'ar': 'عرض الملفات'}), ('find . -type f', {'uz': 'Fayllarni qidirish', 'ru': 'Поиск файлов', 'en': 'Find files', 'ar': 'بحث عن الملفات'}), ('cp -r src backup', {'uz': 'Papka nusxasi', 'ru': 'Копия папки', 'en': 'Copy directory', 'ar': 'نسخ مجلد'})],
+    'packages': [('pkg update', {'uz': 'Repo ro‘yxatini yangilash', 'ru': 'Обновить репозитории', 'en': 'Refresh repositories', 'ar': 'تحديث المستودعات'}), ('pkg upgrade', {'uz': 'Paketlarni yangilash', 'ru': 'Обновить пакеты', 'en': 'Upgrade packages', 'ar': 'ترقية الحزم'}), ('pkg search python', {'uz': 'Paket qidirish', 'ru': 'Поиск пакета', 'en': 'Search package', 'ar': 'البحث عن حزمة'}), ('pkg uninstall nomi', {'uz': 'Paketni olib tashlash', 'ru': 'Удалить пакет', 'en': 'Remove package', 'ar': 'إزالة حزمة'})],
+    'network': [('ping -c 4 1.1.1.1', {'uz': 'Aloqani tekshirish', 'ru': 'Проверить связь', 'en': 'Check connectivity', 'ar': 'فحص الاتصال'}), ('curl -I https://example.com', {'uz': 'HTTP sarlavhasini ko‘rish', 'ru': 'HTTP-заголовки', 'en': 'Inspect HTTP headers', 'ar': 'فحص ترويسات HTTP'}), ('ss -tuln', {'uz': 'Ochiq portlar', 'ru': 'Открытые порты', 'en': 'Listening ports', 'ar': 'المنافذ المفتوحة'}), ('ip addr', {'uz': 'Tarmoq interfeyslari', 'ru': 'Сетевые интерфейсы', 'en': 'Network interfaces', 'ar': 'واجهات الشبكة'})],
+    'system': [('clear', {'uz': 'Ekranni tozalash', 'ru': 'Очистить экран', 'en': 'Clear screen', 'ar': 'مسح الشاشة'}), ('top', {'uz': 'Jarayonlar va CPU', 'ru': 'Процессы и CPU', 'en': 'Processes and CPU', 'ar': 'العمليات والمعالج'}), ('df -h', {'uz': 'Disk joyi', 'ru': 'Место на диске', 'en': 'Disk space', 'ar': 'مساحة القرص'}), ('du -sh .', {'uz': 'Papka hajmi', 'ru': 'Размер папки', 'en': 'Directory size', 'ar': 'حجم المجلد'})]
+}
 
 QUIZ_DATA = [
     {'q': {'uz': "Papka yaratish?", 'ru': "Папка?", 'en': "Make folder?", 'ar': "مجلد؟"}, 'options': ['mkdir', 'cd', 'ls', 'rm'], 'answer': 'mkdir'},
@@ -545,6 +586,20 @@ QUIZ_DATA = [
     {'q': {'uz': "Bo'sh joy?", 'ru': "Свободно?", 'en': "Free space?", 'ar': "مساحة؟"}, 'options': ['df', 'free', 'du', 'ls'], 'answer': 'df'},
     {'q': {'uz': "IP manzil?", 'ru': "IP?", 'en': "IP?", 'ar': "IP؟"}, 'options': ['ifconfig', 'ls', 'ping', 'cat'], 'answer': 'ifconfig'}
 ]
+
+# Termux, Python, Lua, Git, Linux va Java bo'yicha qo'shimcha savollar.
+QUIZ_DATA.extend([
+    {'q': {'uz': "Python ro'yxat uzunligi?", 'ru': "Длина списка?", 'en': "List length?", 'ar': "طول القائمة؟"}, 'options': ['len(items)', 'size(items)', 'count(items)', 'items.length'], 'answer': 'len(items)'},
+    {'q': {'uz': "Python lug'at qiymatini olish?", 'ru': "Значение словаря?", 'en': "Dictionary value?", 'ar': "قيمة القاموس؟"}, 'options': ["data['name']", 'data->name', 'data.name()', 'get data name'], 'answer': "data['name']"},
+    {'q': {'uz': "Python shart operatori?", 'ru': "Условие Python?", 'en': "Python condition?", 'ar': "شرط بايثون؟"}, 'options': ['if', 'when', 'check', 'case'], 'answer': 'if'},
+    {'q': {'uz': "Lua izoh belgisi?", 'ru': "Комментарий Lua?", 'en': "Lua comment?", 'ar': "تعليق Lua؟"}, 'options': ['--', '#', '//', '/*'], 'answer': '--'},
+    {'q': {'uz': "Git yangi branch yaratish?", 'ru': "Новая ветка Git?", 'en': "New Git branch?", 'ar': "فرع Git جديد؟"}, 'options': ['git switch -c dev', 'git branch --new dev', 'git make dev', 'git fork dev'], 'answer': 'git switch -c dev'},
+    {'q': {'uz': "Java kompilyator buyrug'i?", 'ru': "Компилятор Java?", 'en': "Java compiler?", 'ar': "مترجم Java؟"}, 'options': ['javac', 'java-build', 'compile-java', 'jrun'], 'answer': 'javac'},
+    {'q': {'uz': "Termux paket o'rnatish?", 'ru': "Установка пакета?", 'en': "Install package?", 'ar': "تثبيت حزمة؟"}, 'options': ['pkg install', 'pkg add', 'apt make', 'termux get'], 'answer': 'pkg install'},
+    {'q': {'uz': "Linux fayl huquqini ko'rish?", 'ru': "Права файла?", 'en': "File permissions?", 'ar': "صلاحيات الملف؟"}, 'options': ['ls -l', 'perm -l', 'chmod -show', 'file --rights'], 'answer': 'ls -l'},
+    {'q': {'uz': "Python paket o'rnatish?", 'ru': "Пакет Python?", 'en': "Install Python package?", 'ar': "تثبيت حزمة بايثون؟"}, 'options': ['python -m pip install', 'python add', 'pip get', 'py package'], 'answer': 'python -m pip install'},
+    {'q': {'uz': "JSON nimaga ishlatiladi?", 'ru': "Для чего JSON?", 'en': "What is JSON for?", 'ar': "ما استخدام JSON؟"}, 'options': ['Ma’lumot almashish', 'Faqat rasm', 'Audio yozish', 'CPU boshqarish'], 'answer': 'Ma’lumot almashish'}
+])
 
 # ==========================================
 # KLAVIATURALAR
@@ -1022,7 +1077,7 @@ color15=#ffffff
     elif data == "script_generate":
         selected = context.user_data.get('selected_scripts', [])
         if not selected: return await query.answer(t['script_empty'], show_alert=True)
-        script_content = "#!/data/data/com.termux/files/usr/bin/bash\n\necho \"🚀 O'rnatish boshlanmoqda...\"\npkg update -y && pkg upgrade -y\n"
+        script_content = "#!/data/data/com.termux/files/usr/bin/bash\nset -euo pipefail\n\necho \"🚀 O'rnatish boshlanmoqda...\"\n# Avval ko'rib chiqing: bash install.sh\npkg update -y\n"
         pkg_installs, pip_installs, custom_commands = [], [], []
         for script_id in selected:
             cat_key, item_key = script_id.split("_", 1)
@@ -1031,7 +1086,9 @@ color15=#ffffff
             elif item_data['type'] == 'pip' and item_data['pkg'] not in pip_installs: pip_installs.append(item_data['pkg'])
             elif item_data['type'] == 'custom': custom_commands.append(item_data['pkg'])
         if pkg_installs: script_content += f"pkg install -y {' '.join(pkg_installs)}\n"
-        for cmd in custom_commands: script_content += f"{cmd}\n"
+        for cmd in custom_commands:
+            # Masofaviy curl|bash kabi buyruqlar avtomatik bajarilmaydi.
+            script_content += f"\n# Qo'lda ko'rib chiqing va kerak bo'lsa bajaring:\n# {cmd}\n"
         if pip_installs:
             script_content += "pip install --upgrade pip || true\n"
             script_content += f"pip install {' '.join(pip_installs)}\n"
@@ -1186,11 +1243,17 @@ color15=#ffffff
         msg = await context.bot.send_message(chat_id=chat_id, text=t['apk_loading'])
         await query.message.delete()
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(TERMUX_APK_URL) as response:
+            apk_url = await get_latest_termux_apk_url()
+            timeout = aiohttp.ClientTimeout(total=90, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(apk_url) as response:
                     if response.status == 200:
+                        content_length = int(response.headers.get('Content-Length', '0') or 0)
+                        if content_length > 60 * 1024 * 1024:
+                            await msg.edit_text("⚠️ APK hajmi juda katta.")
+                            return
                         apk = await response.read()
-                        if len(apk) > 50 * 1024 * 1024:
+                        if len(apk) > 60 * 1024 * 1024:
                             await msg.edit_text(t['apk_too_big'])
                         else:
                             f = BytesIO(apk)
@@ -1360,6 +1423,10 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else: await msg.edit_text(t['ai_unsupported_file']); return
         else: await msg.edit_text(t['ai_video_error']); return
 
+        allowed, _ = await check_ai_limit(user_id, consume=True)
+        if not allowed:
+            await msg.edit_text(t['ai_limit_reached'])
+            return
         ai_reply = ""
         sys_prompt = "You are an expert Software Engineer. Write/fix code. Reply in markdown code blocks. Reply in user's language."
 
@@ -1439,7 +1506,10 @@ async def handle_challenge_solution(update: Update, context: ContextTypes.DEFAUL
                 messages=[{"role":"user","content":prompt}], max_tokens=200)
             ai = r.choices[0].message.content.strip()
     except Exception as e: logging.error(f"Ch: {e}")
-    if "CORRECT" in ai.upper():
+    # "INCORRECT" ichida ham "CORRECT" bor; shuning uchun substring emas,
+    # faqat aniq CORRECT javobini qabul qilamiz.
+    is_correct = bool(re.match(r'^\s*CORRECT(?:\s|$)', ai, re.IGNORECASE))
+    if is_correct:
         await add_score(user_id, 30); await update_challenge_date(user_id)
         context.user_data['state'] = None; context.user_data['current_challenge'] = None
         await msg.edit_text(t['challenge_correct'], parse_mode='Markdown')
@@ -1778,7 +1848,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
-            am = f"📩 Murojaat!\n\n👤 {user.first_name} (@{user.username})\n🆔 {user.id}\n\n💬 {update.message.text}"
+            display_name = " ".join(x for x in [user.first_name, user.last_name] if x) or "Noma'lum foydalanuvchi"
+            username = f"@{user.username}" if user.username else "username yo'q"
+            am = f"📩 Murojaat!\n\n👤 {display_name}\n🔗 {username}\n🆔 `{user.id}`\n\n💬 {update.message.text}"
             try:
                 await context.bot.send_message(chat_id=ADMIN_ID, text=am)
                 await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang, user.id))
