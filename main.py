@@ -15,9 +15,12 @@ import json as json_lib
 from urllib.parse import quote
 from io import BytesIO
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, PreCheckoutQueryHandler
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, MessageHandler,
+    filters, ContextTypes, PreCheckoutQueryHandler
+)
 from telegram.error import TelegramError
 from openai import AsyncOpenAI
 from google import genai
@@ -103,7 +106,7 @@ async def init_db():
                 category_id INT, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
             await conn.execute('''CREATE TABLE IF NOT EXISTS file_categories (
-                id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL,
+                id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL UNIQUE,
                 icon VARCHAR(10) DEFAULT '📁',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
@@ -126,8 +129,22 @@ async def init_db():
                 button_text VARCHAR(100) DEFAULT '📥 DASTURNI OLISH',
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
+        await ensure_default_categories()
     except Exception as e:
         logging.error(f"Baza xatosi: {e}")
+
+async def ensure_default_categories():
+    if not db_pool: return
+    defaults = [("Lua Fayllar", "📙"), ("Python Fayllar", "🐍")]
+    async with db_pool.acquire() as conn:
+        for name, icon in defaults:
+            try:
+                await conn.execute(
+                    'INSERT INTO file_categories (name, icon) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
+                    name, icon
+                )
+            except Exception as e:
+                logging.error(f"Default kategoriya xatosi ({name}): {e}")
 
 async def add_user(user_id, lang='uz'):
     if not db_pool: return
@@ -185,15 +202,22 @@ async def get_top_users():
     async with db_pool.acquire() as conn:
         return await conn.fetch('SELECT user_id, score FROM users ORDER BY score DESC LIMIT 10')
 
-# ============ FILE CATEGORIES ============
 async def get_all_categories():
     if not db_pool: return []
     async with db_pool.acquire() as conn:
         return await conn.fetch('SELECT id, name, icon FROM file_categories ORDER BY id ASC')
 
+async def get_category_by_name(name):
+    if not db_pool: return None
+    async with db_pool.acquire() as conn:
+        return await conn.fetchrow('SELECT id, name, icon FROM file_categories WHERE name = $1', name)
+
 async def add_category(name, icon='📁'):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
+        existing = await conn.fetchrow('SELECT id FROM file_categories WHERE name = $1', name)
+        if existing:
+            return existing['id']
         return await conn.fetchval('INSERT INTO file_categories (name, icon) VALUES ($1, $2) RETURNING id', name, icon)
 
 async def get_category_by_id(cat_id):
@@ -204,7 +228,7 @@ async def get_category_by_id(cat_id):
 async def get_files_by_category(cat_id):
     if not db_pool: return []
     async with db_pool.acquire() as conn:
-        return await conn.fetch('SELECT id, title, is_premium FROM files WHERE category_id = $1 ORDER BY id DESC', cat_id)
+        return await conn.fetch('SELECT id, title, is_premium, file_type FROM files WHERE category_id = $1 ORDER BY id DESC', cat_id)
 
 async def add_file_db_cat(title, file_id, file_type, category_id, is_premium=False):
     if not db_pool: return
@@ -359,14 +383,13 @@ TEXTS = {
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
         'btn_change_lang': "🌐 Til", 'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar",
+        'btn_lua_files': "📙 LUA FILES", 'btn_py_files': "🐍 PYTHON FILES",
         'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Kunlik Masala", 'btn_theme': "🎨 Termux Temasi",
         'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
         'btn_python': "🐍 PYTHON OLISH", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
         'btn_updates': "🆕 Yangilanishlar", 'btn_devtools': "🧰 Developer Tools", 'streak_btn': "🔥 Kunlik Streak",
-
         'force_sub_text': "⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
-
         'challenge_menu': "🧩 **Kunlik Masala**",
         'challenge_problem': "📝 **Bugungi masala:**\n\n{text}\n\n💻 *Kodni yuboring:*",
         'challenge_already_done': "✅ Siz bugungi masalani yechdingiz!",
@@ -374,16 +397,12 @@ TEXTS = {
         'challenge_correct': "✅ **To'g'ri!** 🎉 **+30 ball**",
         'challenge_wrong': "❌ **Xato!**\n\n{feedback}",
         'challenge_no_code': "⚠️ Kod yuboring.",
-
         'theme_menu': "🎨 **Termux Terminal Dizayni**\n\nRangni tanlang — bot `colors.properties` faylini beradi.",
         'theme_send': "✅ **{theme_name} tayyor!**\n\n**O'rnatish:**\n1. Yuklab olingan `colors.properties` faylini Termux'ning `~/.termux/` papkasiga joylashtiring.\n2. Termux'da `termux-reload-settings` buyrug'ini bering.\n\nMana fayl:",
-
         'script_cat_menu': "📦 **Skript Yaratuvchi**\n\nBo'limni tanlang:",
         'script_items_menu': "⚙️ **{cat_name}**\n\nDasturlarni tanlang:",
         'btn_generate_script': "🚀 Yaratish", 'btn_clear_scripts': "🗑 Tozalash", 'btn_back_to_cats': "🔙 Orqaga",
         'script_empty': "⚠️ Dastur tanlang!", 'script_done': "✅ **Tayyor!**\n\n`bash install.sh` bilan ishga tushiring.",
-
-        # FILES - yangi tizim
         'files_menu': "🗂 **Fayllar Markazi**\n\nPapkani tanlang:",
         'files_empty': "Hozircha papkalar yo'q. Tez orada qo'shiladi!",
         'files_cat_menu': "📂 **{cat_name}**\n\nFaylni tanlang:",
@@ -391,8 +410,6 @@ TEXTS = {
         'files_back_to_cats': "🔙 Papkalarga qaytish",
         'file_sending': "⏳ Fayl yuborilmoqda...",
         'file_premium_locked': "🔒 Bu fayl faqat Premium obunachilar uchun!",
-
-        # ADMIN FILES
         'admin_file_choose_cat': "📂 **Qaysi papkaga qo'shmoqchisiz?**\n\nPapka tanlang yoki yangi yarating:",
         'admin_file_no_cats': "📂 **Fayl qo'shish**\n\nHozircha papkalar yo'q.\nBoshlash uchun yangi papka yarating:",
         'admin_file_new_cat_prompt': "➕ **Yangi papka yaratish**\n\nPapka nomini yozing:\n\n_Misol: `Python darsliklar` yoki `APK fayllar`_",
@@ -406,13 +423,11 @@ TEXTS = {
         'admin_cat_del_confirm': "⚠️ **{cat_name}** papkasini o'chirishni tasdiqlaysizmi?\n\n_(Ichidagi barcha fayllar ham o'chadi)_",
         'admin_file_deleted': "✅ Fayl o'chirildi!",
         'admin_file_saved': "✅ Fayl saqlandi!",
-
         'premium_menu': "💎 **Premium Obuna**\n\n✅ Cheksiz AI\n✅ Premium fayllar\n\n💰 **50 Stars** — 1 oy",
         'btn_buy_premium': "⭐️ 50 Stars evaziga olish",
         'premium_success': "🎉 **Premium faollashtirildi!**",
         'ai_limit_reached': "⚠️ **Limit tugadi!** Kuniga 5 ta bepul. Premium oling.",
         'btn_go_premium': "💎 Premium olish",
-
         'admin_panel': "👑 **Admin Panel**",
         'admin_btn_stats': "📊 Statistika", 'admin_btn_bcast': "📢 Xabar",
         'admin_btn_points': "🎁 Ball berish", 'admin_btn_add_file': "➕ Fayl",
@@ -429,7 +444,6 @@ TEXTS = {
         'admin_update_done': "✅ **Yuborildi!**\n📩 {success}\n❌ {fail}",
         'admin_toggle_on': "✅ **Auto-forward yoqildi!**\n\nEndi kanalga video qo'shsangiz, 10 daqiqa ichida fayl yuboring yoki /done yozing.",
         'admin_toggle_off': "🔴 **Auto-forward o'chirildi.**",
-
         'text_page': "📚 **Darsliklar**\n\nSahifa: {page} / {total}",
         'text_lua': "📚 **LUA DARSLIKLARI**",
         'text_python_done': "Mana Python darsligi! ✅",
@@ -440,7 +454,6 @@ TEXTS = {
         'apk_caption': "📱 **Termux APK**", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌ Xatolik!",
         'support_prompt': "✉️ **Admin**\n\nXabaringizni yozing:",
         'support_sent': "✅ Yuborildi!", 'support_reply': "📬 **Admin:**\n\n",
-
         'profile_text': "👤 **Profil**\n\n⭐ **Ball:** {score}\n🏅 **Daraja:** {level}\n📊 **O'rin:** #{rank}\n💎 **Holat:** {status}",
         'btn_daily_bonus': "🎁 Kunlik bonus", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Ertaga!",
         'top_text': "🏆 **Top 10:**\n\n{list}",
@@ -449,12 +462,10 @@ TEXTS = {
         'quiz_wrong': "❌ **Xato!** Javob: **{answer}**",
         'quiz_end': "🎉 Barcha savollar tugadi!",
         'btn_next_quiz': "➡️ Keyingi",
-
         'sec_menu': "🛡️ **Kiberxavfsizlik**\n\n⚠️ Faqat o'z tizimingizda!",
         'sec_info': "🔍 Ma'lumot", 'sec_pass': "🔑 Parol", 'sec_exploit': "💥 Zaiflik", 'sec_network': "📡 Tarmoq",
         'sec_info_text': "Nmap: `pkg install nmap`", 'sec_pass_text': "Hydra: `pkg install hydra`",
         'sec_exploit_text': "SQLmap: `pip install sqlmap`", 'sec_network_text': "Tshark: `pkg install tshark`",
-
         'admin_bcast_start': "📢 Xabar yuboring:", 'admin_bcast_wait': "⏳...", 'admin_bcast_done': "✅ {success}, ❌ {fail}", 'admin_bcast_cancel': "❌ Bekor",
         'ai_prompt': "🤖 **AI Dasturchi**\n\nTopshiriq bering yoki kod yuboring.",
         'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅",
@@ -462,9 +473,7 @@ TEXTS = {
         'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️ Faqat kod.", 'ai_video_error': "🎥",
         'ai_file_too_large': "⚠️ Katta.", 'ai_text_too_long': "⚠️ Uzun.", 'ai_not_coding': "🤖 Faqat dasturlash.",
         'ai_limit_info': "ℹ️ *Qoldi: {limit} ta*",
-
         'java_info_text': "☕ **Java Termux'da**\n\n**1. O'rnatish:**\n```bash\npkg update && pkg upgrade -y\npkg install openjdk-17 -y\n```\n\n**2. Tekshirish:**\n`java -version`\n\n**3. Fayl yaratish:**\n```bash\nnano Salom.java\n```\n\n**4. Kod:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n\n**5. Kompilyatsiya:**\n```bash\njavac Salom.java\njava Salom\n```",
-
         'devtools_menu': "🧰 **Developer Tools**",
         'devtools_pass': "🔐 Parol", 'devtools_hash': "🔢 Hash",
         'devtools_b64enc': "📝 Base64 Enc", 'devtools_b64dec': "📝 Base64 Dec",
@@ -473,19 +482,16 @@ TEXTS = {
         'devtools_b64enc_prompt': "📝 Matn:", 'devtools_b64dec_prompt': "📝 Base64:",
         'devtools_json_prompt': "📊 JSON:", 'devtools_qr_prompt': "📱 Matn/havola:",
         'devtools_invalid': "❌ {error}",
-
         'streak_claimed': "🔥 +{reward}! (Kun: {days})\n\n{extra}",
         'streak_already': "✅ Bugun olgansiz!",
         'streak_reset_info': "⚠️ Streak yangilandi!",
         'streak_7_bonus': "🎉 7 kun!", 'streak_30_bonus': "🎉 30 kun! Premium!",
-
         'updates_menu': "🆕 **Yangilanishlar tarixi:**\n\n",
         'updates_empty': "Hozircha yangilanishlar yo'q.",
         'new_video_notification': "🆕 **Yangi darslik qo'shildi!**\n\n📚 Darslik: **{num}**\n\n{extra}",
     }
 }
 
-# Boshqa tillar uchun sodda tarjima
 for other_lang in ['ru', 'en', 'ar']:
     TEXTS[other_lang] = {k: v for k, v in TEXTS['uz'].items()}
     TEXTS[other_lang]['choose_lang'] = "🌐 Select language" if other_lang == 'en' else ("🌐 Выберите язык" if other_lang == 'ru' else "🌐 اختر اللغة")
@@ -545,6 +551,7 @@ def get_main_menu(lang, user_id):
     t = TEXTS[lang]
     keyboard = [
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
+        [InlineKeyboardButton(t['btn_lua_files'], callback_data="quick_cat_Lua Fayllar"), InlineKeyboardButton(t['btn_py_files'], callback_data="quick_cat_Python Fayllar")],
         [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
         [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
         [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
@@ -676,7 +683,6 @@ def get_quiz_keyboard(options, lang):
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
-# ============ FILE KEYBOARDS ============
 def get_files_categories_keyboard(lang, categories):
     t = TEXTS[lang]
     keyboard = []
@@ -762,8 +768,21 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
-    # ============ FILES ============
-    if data == "files_menu":
+    if data.startswith("quick_cat_"):
+        cat_name = data.replace("quick_cat_", "")
+        cat = await get_category_by_name(cat_name)
+        if not cat:
+            new_id = await add_category(cat_name, icon='📁')
+            cat = await get_category_by_id(new_id) if new_id else None
+        if not cat:
+            return await query.answer("❌ Papka topilmadi.", show_alert=True)
+        files = await get_files_by_category(cat['id'])
+        if not files:
+            return await query.answer(f"📂 {cat['icon']} {cat['name']} hozircha bo'sh.\n\nAdmin fayl yuklashi mumkin.", show_alert=True)
+        text = t['files_cat_menu'].format(cat_name=f"{cat['icon']} {cat['name']}")
+        await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat['id']))
+
+    elif data == "files_menu":
         categories = await get_all_categories()
         if not categories:
             return await query.answer(t['files_empty'], show_alert=True)
@@ -798,10 +817,10 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_video(chat_id=chat_id, video=file_data['file_id'], caption=f"🎬 {file_data['title']}")
             elif file_data['file_type'] == 'photo':
                 await context.bot.send_photo(chat_id=chat_id, photo=file_data['file_id'], caption=f"🖼 {file_data['title']}")
-        except Exception:
+        except Exception as e:
+            logging.error(f"Fayl yuborishda xato: {e}")
             await context.bot.send_message(chat_id=chat_id, text="❌ Xatolik.")
 
-    # ============ ADMIN FILES ============
     elif data == "admin_add_file":
         if user_id != ADMIN_ID: return
         context.user_data.pop('selected_category', None)
@@ -853,6 +872,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID: return
         cat_id = int(data.replace("admin_delcat_final_", ""))
         await delete_category(cat_id)
+        await ensure_default_categories()
         categories = await get_all_categories()
         text = t['admin_cat_deleted'] + "\n\n" + (t['admin_file_choose_cat'] if categories else t['admin_file_no_cats'])
         await edit_or_send(query, context, text, get_admin_file_categories_keyboard(lang, categories))
@@ -871,7 +891,6 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"✅ Fayl o'chirildi!\n\n{t['files_cat_menu'].format(cat_name=cat_name)}"
         await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat_id, is_admin=True))
 
-    # ============ PREMIUM ============
     elif data == "premium_menu":
         await edit_or_send(query, context, t['premium_menu'], get_premium_keyboard(lang))
 
@@ -980,7 +999,9 @@ color15=#ffffff
             total = await conn.fetchval('SELECT COUNT(*) FROM users')
             prem = await conn.fetchval('SELECT COUNT(*) FROM users WHERE is_premium = TRUE')
             top = await conn.fetchval('SELECT MAX(score) FROM users')
-        text = f"📊 **Statistika**\n\n👥 {total}\n💎 {prem}\n🏆 {top}"
+            nfiles = await conn.fetchval('SELECT COUNT(*) FROM files')
+            ncats = await conn.fetchval('SELECT COUNT(*) FROM file_categories')
+        text = f"📊 **Statistika**\n\n👥 Foydalanuvchilar: **{total}**\n💎 Premium: **{prem}**\n🏆 Eng yuqori: **{top}**\n📂 Papkalar: **{ncats}**\n📄 Fayllar: **{nfiles}**"
         await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_update":
         if user_id != ADMIN_ID: return
@@ -1491,7 +1512,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
 
-    # === AVTO FAYL BIRIKTIRISH (pending video) ===
     if user.id == ADMIN_ID and PENDING_VIDEOS:
         if update.message.document or update.message.video or update.message.photo or update.message.audio:
             last_msg_id = list(PENDING_VIDEOS.keys())[-1]
@@ -1521,7 +1541,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='Markdown')
                 return
 
-    # === ADMIN: NEW CATEGORY ===
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_new_cat_name':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -1541,7 +1560,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['state'] = None
         return
 
-    # === ADMIN: WAITING FOR FILE ===
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_add_file':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -1560,7 +1578,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Fayl yuboring yoki /cancel bosing.")
         return
 
-    # === ADMIN: WAITING FOR TITLE ===
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_file_title':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -1583,7 +1600,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_category_files_keyboard(lang, files, cat_id, is_admin=True))
         return
 
-    # === DEVTOOLS ===
     if context.user_data.get('state') == 'in_dev_pass':
         context.user_data['state'] = None
         if not update.message.text or not update.message.text.strip().isdigit():
@@ -1653,7 +1669,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('state') == 'in_challenge':
         await handle_challenge_solution(update, context); return
 
-    # === ADMIN: POINTS ===
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_admin_points':
         if update.message.text.isdigit():
             points = int(update.message.text)
@@ -1676,7 +1691,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Raqam!")
         return
 
-    # === ADMIN: UPDATE ===
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_admin_update':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
@@ -1700,14 +1714,12 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = None
         return
 
-    # === ADMIN: BCAST ===
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_broadcast':
         if update.message.text == "/cancel":
             context.user_data['state'] = None
             await update.message.reply_text(t['admin_bcast_cancel']); return
         await process_broadcast(update, context); return
 
-    # === SUPPORT ===
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
             am = f"📩 Murojaat!\n\n👤 {user.first_name} (@{user.username})\n🆔 {user.id}\n\n💬 {update.message.text}"
@@ -1744,7 +1756,7 @@ async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(f"✅ {success} | ❌ {fail}")
 
 # ==========================================
-# WEB SERVER
+# WEB SERVER (TO'LIQ TUZATILGAN)
 # ==========================================
 application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
@@ -1759,12 +1771,41 @@ application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_me
 
 app = FastAPI()
 
+INDEX_HTML = """<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<title>Termux Bot</title>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+.card{max-width:520px;padding:48px 32px;text-align:center;}
+h1{font-size:2.6em;margin:0 0 16px;background:linear-gradient(135deg,#58a6ff,#bc8cff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+p{color:#8b949e;line-height:1.7;margin:16px 0;}
+.status{display:inline-flex;align-items:center;gap:8px;background:#161b22;border:1px solid #30363d;padding:8px 20px;border-radius:20px;margin-top:24px;font-size:.9em;}
+.dot{width:8px;height:8px;background:#3fb950;border-radius:50%;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+a{color:#58a6ff;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>🤖 Termux Bot</h1>
+<p>Termux va Dasturlash bo'yicha yordamchi bot.<br>Python, LUA, AI va boshqa ko'p narsalar.</p>
+<div class="status"><span class="dot"></span> Bot faol ishlamoqda</div>
+</div>
+</body>
+</html>"""
+
 @app.on_event("startup")
 async def on_startup():
     await init_db()
     await application.initialize()
-    await application.bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}")
-    print(f"✅ Bot ishga tushdi!")
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook/{TOKEN}"
+        await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+        print(f"✅ Bot ishga tushdi! Webhook: {webhook_url}")
+    else:
+        print("⚠️ RENDER_EXTERNAL_URL yo'q — webhook o'rnatilmadi")
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -1773,14 +1814,21 @@ async def on_shutdown():
 
 @app.post(f"/webhook/{TOKEN}")
 async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
+    try:
+        data = await request.json()
+        update = Update.de_json(data, application.bot)
+        await application.process_update(update)
+    except Exception as e:
+        logging.error(f"Webhook xato: {e}")
     return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    return FileResponse("index.html")
+    return HTMLResponse(content=INDEX_HTML)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "bot": "running"}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
