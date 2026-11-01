@@ -164,6 +164,9 @@ async def init_db():
                 title VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(track, lesson_number)
             )''')
+            # Bo'sh Lua tugmalari va olib tashlangan Termux 48 yozuvi qayta chiqmasin.
+            await conn.execute("DELETE FROM lesson_entries WHERE track = 'lua' AND lesson_number BETWEEN 10 AND 50")
+            await conn.execute("DELETE FROM lesson_entries WHERE track = 'termux' AND lesson_number = 48")
         await ensure_default_categories()
     except Exception as e:
         logging.error(f"Baza xatosi: {e}")
@@ -357,6 +360,15 @@ async def get_lesson_entry(track, lesson_number):
     async with db_pool.acquire() as conn:
         return await conn.fetchrow('SELECT * FROM lesson_entries WHERE track = $1 AND lesson_number = $2', track, lesson_number)
 
+async def get_max_lua_lesson_number():
+    max_num = max(LUA_LESSONS.keys())
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            db_max = await conn.fetchval("SELECT MAX(lesson_number) FROM lesson_entries WHERE track = 'lua'")
+            if db_max:
+                max_num = max(max_num, int(db_max))
+    return max_num
+
 async def save_lesson_entry(track, lesson_number, source_type, source_id, source_chat_id=None, title=None):
     if not db_pool: return False
     async with db_pool.acquire() as conn:
@@ -484,7 +496,7 @@ TEXTS = {
     'uz': {
         'choose_lang': "👋 **Assalomu alaykum!**\n\nIltimos, o'zingizga qulay tilni tanlang:",
         'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
-        'btn_termux': "📽️ TERMUX DARSLIKLAR", 'btn_lua': "📽️ LUA PAK DARSLIK",
+        'btn_termux': "📽️ TERMUX DARSLIK", 'btn_lua': "📽️ LUA PAK DARSLIK",
         'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH",
         'btn_ai': "🤖 AI Dasturchi", 'btn_profile': "👤 Mening profilim",
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
@@ -550,7 +562,7 @@ TEXTS = {
         'admin_update_done': "✅ **Yuborildi!**\n📩 {success}\n❌ {fail}",
         'admin_toggle_on': "✅ **Auto-forward yoqildi!**\n\nEndi kanalga video qo'shsangiz, 10 daqiqa ichida fayl yuboring yoki /done yozing.",
         'admin_toggle_off': "🔴 **Auto-forward o'chirildi.**",
-        'text_page': "📚 **Darsliklar**\n\nSahifa: {page} / {total}",
+        'text_page': "📚 **TERMUX DARSLIK**\n\nSahifa: {page} / {total}",
         'text_lua': "📚 **LUA DARSLIKLARI**",
         'text_python_done': "Mana Python darsligi! ✅",
         'text_error_vid': "❌ **Video topilmadi.**\n\nBot kanalda admin ekanligini tekshiring.",
@@ -786,7 +798,7 @@ def get_lessons_keyboard(page, lang, max_lesson=47):
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_lua_lessons_keyboard(lang, max_lesson=50):
+def get_lua_lessons_keyboard(lang, max_lesson=9):
     t = TEXTS[lang]
     keyboard, row = [], []
     for i in range(1, max_lesson + 1):
@@ -982,7 +994,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID: return
         context.user_data['state'] = 'in_lesson_track'
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📽️ TERMUX DARSLIKLAR", callback_data="admin_lesson_track_termux")],
+            [InlineKeyboardButton("📽️ TERMUX DARSLIK", callback_data="admin_lesson_track_termux")],
             [InlineKeyboardButton("📽️ LUA PAK DARSLIKLAR", callback_data="admin_lesson_track_lua")],
             [InlineKeyboardButton("🗑 Darslik/video o'chirish", callback_data="admin_lesson_delete")],
             [InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]
@@ -1406,7 +1418,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
 
     elif data == "lua_page_1":
-        await edit_or_send(query, context, t['text_lua'], get_lua_lessons_keyboard(lang))
+        max_lua = await get_max_lua_lesson_number()
+        await edit_or_send(query, context, t['text_lua'], get_lua_lessons_keyboard(lang, max_lua))
     elif data.startswith("lua_lesson_"):
         lesson_num = int(data.split("_")[2])
         entry = await get_lesson_entry('lua', lesson_num)
@@ -1425,7 +1438,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logging.error("Lua darslik xatosi: %s", exc)
                 await query.answer("❌ Video topilmadi", show_alert=True)
             return
-        if lesson_num not in LUA_LESSONS:
+        max_lua = await get_max_lua_lesson_number()
+        if lesson_num not in LUA_LESSONS and not (await get_lesson_entry('lua', lesson_num)):
             return await query.answer("ℹ️ Bu darslik hali qo'shilmagan.", show_alert=True)
         message_id = LUA_LESSONS.get(lesson_num, 93)
         buttons = []
