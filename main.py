@@ -446,17 +446,27 @@ CHALLENGES_DATA = [
 
 THEMES_DATA = {
     "matrix": {"name": "🟢 Matrix", "bg": "#000000", "fg": "#00ff00", "cursor": "#00ff00"},
-    "hacker": {"name": "🔴 Hacker", "bg": "#0a0a0a", "fg": "#ff0000", "cursor": "#ff0000"},
+    "hacker": {"name": "🔴 Hacker", "bg": "#0a0a0a", "fg": "#ff5555", "cursor": "#ff0000"},
     "cyberpunk": {"name": "🌆 Cyberpunk", "bg": "#1a0033", "fg": "#ffff00", "cursor": "#ff00ff"},
     "dracula": {"name": "🧛 Dracula", "bg": "#282a36", "fg": "#f8f8f2", "cursor": "#50fa7b"},
-    "nord": {"name": "❄️ Nord", "bg": "#2e3440", "fg": "#d8dee9", "cursor": "#88c0d0"}
+    "nord": {"name": "❄️ Nord", "bg": "#2e3440", "fg": "#d8dee9", "cursor": "#88c0d0"},
+    "solarized": {"name": "☀️ Solarized", "bg": "#002b36", "fg": "#839496", "cursor": "#b58900"},
+    "gruvbox": {"name": "🟤 Gruvbox", "bg": "#282828", "fg": "#ebdbb2", "cursor": "#fe8019"},
+    "ocean": {"name": "🌊 Ocean", "bg": "#001f3f", "fg": "#7fdbff", "cursor": "#39cccc"}
 }
 
 SCRIPTS_DATA = {
     "dev": {"name": "💻 Dasturlash", "items": {"python": {"name": "🐍 Python", "pkg": "python", "type": "pkg"}, "git": {"name": "🐙 Git", "pkg": "git", "type": "pkg"}, "node": {"name": "🟢 Node.js", "pkg": "nodejs", "type": "pkg"}, "curl": {"name": "📡 Curl", "pkg": "curl", "type": "pkg"}, "wget": {"name": "📥 Wget", "pkg": "wget", "type": "pkg"}, "nano": {"name": "📝 Nano", "pkg": "nano", "type": "pkg"}, "vim": {"name": "📝 Vim", "pkg": "vim", "type": "pkg"}, "micro": {"name": "📝 Micro", "pkg": "micro", "type": "pkg"}}},
     "hacking": {"name": "🛡️ Kiberxavfsizlik", "items": {"nmap": {"name": "🌐 Nmap", "pkg": "nmap", "type": "pkg"}, "hydra": {"name": "🔑 Hydra", "pkg": "hydra", "type": "pkg"}, "sqlmap": {"name": "💥 SQLmap", "pkg": "sqlmap", "type": "pip"}, "metasploit": {"name": "💀 Metasploit", "pkg": "metasploit", "type": "pkg"}, "john": {"name": "🔓 John The Ripper", "pkg": "john", "type": "pkg"}, "nikto": {"name": "🕵️ Nikto", "pkg": "nikto", "type": "pkg"}, "aircrack": {"name": "📡 Aircrack-ng", "pkg": "aircrack-ng", "type": "pkg"}, "tshark": {"name": "🦈 Tshark", "pkg": "tshark", "type": "pkg"}}},
     "media": {"name": "🎬 Media va Tarmoq", "items": {"ffmpeg": {"name": "🎞️ FFmpeg", "pkg": "ffmpeg", "type": "pkg"}, "ytdlp": {"name": "📥 yt-dlp", "pkg": "yt-dlp", "type": "pip"}, "imagemagick": {"name": "🖼️ ImageMagick", "pkg": "imagemagick", "type": "pkg"}, "openssh": {"name": "🔐 OpenSSH", "pkg": "openssh", "type": "pkg"}, "net-tools": {"name": "🌐 Net-tools", "pkg": "net-tools", "type": "pkg"}, "traceroute": {"name": "🛣️ Traceroute", "pkg": "traceroute", "type": "pkg"}, "dnsutils": {"name": "🔍 DNS Utils", "pkg": "dnsutils", "type": "pkg"}}},
-    "style": {"name": "🎨 Chiroyli Termux", "items": {"zsh": {"name": "🐚 Zsh", "pkg": "zsh", "type": "pkg"}, "ohmyzsh": {"name": "✨ Oh-My-Zsh", "pkg": "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash", "type": "custom"}, "termuxstyle": {"name": "🎨 Termux Styling", "pkg": "termux-styling", "type": "pkg"}, "figlet": {"name": "🔠 Figlet", "pkg": "figlet", "type": "pkg"}, "lolcat": {"name": "🌈 Lolcat", "pkg": "lolcat", "type": "pkg"}, "neofetch": {"name": "💻 Neofetch", "pkg": "neofetch", "type": "pkg"}}}
+    "style": {"name": "🎨 Chiroyli Termux", "items": {
+        "zsh": {"name": "🐚 Zsh shell", "pkg": "zsh", "type": "pkg"},
+        "ohmyzsh": {"name": "✨ Chiroyli Zsh sozlamasi", "pkg": "safe_style", "type": "custom"},
+        "termuxstyle": {"name": "🎨 Termux:Styling", "pkg": "termux-api", "type": "pkg"},
+        "figlet": {"name": "🔠 Figlet banner", "pkg": "figlet", "type": "pkg"},
+        "lolcat": {"name": "🌈 Lolcat rang", "pkg": "lolcat", "type": "pkg"},
+        "neofetch": {"name": "💻 Neofetch ma'lumot", "pkg": "neofetch", "type": "pkg"}
+    }}
 }
 
 # ==========================================
@@ -486,7 +496,7 @@ TEXTS = {
         'challenge_wrong': "❌ **Xato!**\n\n{feedback}",
         'challenge_no_code': "⚠️ Kod yuboring.",
         'theme_menu': "🎨 **Termux Terminal Dizayni**\n\nRangni tanlang — bot `colors.properties` faylini beradi.",
-        'theme_send': "✅ **{theme_name} tayyor!**\n\n**O'rnatish:**\n1. Yuklab olingan `colors.properties` faylini Termux'ning `~/.termux/` papkasiga joylashtiring.\n2. Termux'da `termux-reload-settings` buyrug'ini bering.\n\nMana fayl:",
+        'theme_send': "✅ **{theme_name} tayyor!**\n\n**Aniq o'rnatish:**\n1. Faylni yuklab oling.\n2. Termux'da `mkdir -p ~/.termux` yozing.\n3. Faylni `~/.termux/colors.properties` nomi bilan joylashtiring.\n4. `termux-reload-settings` buyrug'ini bering.\n\n**Muammo bo'lsa:** `rm ~/.termux/colors.properties` bilan o'chirib, Termux'ni qayta oching.\n\nMana fayl:",
         'script_cat_menu': "📦 **Skript Yaratuvchi**\n\nBo'limni tanlang:",
         'script_items_menu': "⚙️ **{cat_name}**\n\nDasturlarni tanlang:",
         'btn_generate_script': "🚀 Yaratish", 'btn_clear_scripts': "🗑 Tozalash", 'btn_back_to_cats': "🔙 Orqaga",
@@ -1086,26 +1096,18 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         theme_key = data.replace("theme_apply_", "")
         theme = THEMES_DATA.get(theme_key)
         if not theme: return
-        properties_content = f"""background={theme['bg']}
-foreground={theme['fg']}
-cursor={theme['cursor']}
-color0={theme['bg']}
-color8=#555555
-color1=#ff0000
-color9=#ff5555
-color2=#00ff00
-color10=#55ff55
-color3=#ffff00
-color11=#ffff55
-color4=#0000ff
-color12=#5555ff
-color5=#ff00ff
-color13=#ff55ff
-color6=#00ffff
-color14=#55ffff
-color7={theme['fg']}
-color15=#ffffff
-"""
+        palette = {
+            'matrix': ['#000000','#ff5555','#55ff55','#ffff55','#5555ff','#ff55ff','#55ffff','#aaaaaa','#555555','#ff0000','#00ff00','#ffff00','#0000ff','#ff00ff','#00ffff','#ffffff'],
+            'hacker': ['#0a0a0a','#ff5555','#55ff55','#ffff55','#5555ff','#ff55ff','#55ffff','#cccccc','#555555','#ff0000','#00ff00','#ffff00','#0000ff','#ff00ff','#00ffff','#ffffff'],
+            'cyberpunk': ['#1a0033','#ff5555','#55ff55','#ffff55','#5555ff','#ff55ff','#55ffff','#f8f8f2','#555555','#ff0000','#00ff00','#ffff00','#0000ff','#ff00ff','#00ffff','#ffffff'],
+            'dracula': ['#282a36','#ff5555','#50fa7b','#f1fa8c','#6272a4','#ff79c6','#8be9fd','#f8f8f2','#44475a','#ff5555','#50fa7b','#f1fa8c','#6272a4','#ff79c6','#8be9fd','#ffffff'],
+            'nord': ['#2e3440','#bf616a','#a3be8c','#ebcb8b','#81a1c1','#b48ead','#88c0d0','#d8dee9','#4c566a','#bf616a','#a3be8c','#ebcb8b','#81a1c1','#b48ead','#88c0d0','#eceff4'],
+            'solarized': ['#002b36','#dc322f','#859900','#b58900','#268bd2','#d33682','#2aa198','#839496','#073642','#cb4b16','#586e75','#657b83','#839496','#6c71c4','#93a1a1','#fdf6e3'],
+            'gruvbox': ['#282828','#cc241d','#98971a','#d79921','#458588','#b16286','#689d6a','#a89984','#928374','#fb4934','#b8bb26','#fabd2f','#83a598','#d3869b','#8ec07c','#ebdbb2'],
+            'ocean': ['#001f3f','#ff4136','#2ecc40','#ffdc00','#0074d9','#b10dc9','#39cccc','#dddddd','#003b5c','#ff725c','#7bed9f','#ffe066','#4da6ff','#da70d6','#7fdbff','#ffffff']
+        }.get(theme_key, [])
+        properties_content = f"background={theme['bg']}\nforeground={theme['fg']}\ncursor={theme['cursor']}\n"
+        properties_content += "\n".join(f"color{i}={value}" for i, value in enumerate(palette)) + "\n"
         prop_file = BytesIO(properties_content.encode('utf-8'))
         prop_file.name = "colors.properties"
         text = t['theme_send'].format(theme_name=theme['name'])
@@ -1146,11 +1148,18 @@ color15=#ffffff
             item_data = SCRIPTS_DATA[cat_key]['items'][item_key]
             if item_data['type'] == 'pkg' and item_data['pkg'] not in pkg_installs: pkg_installs.append(item_data['pkg'])
             elif item_data['type'] == 'pip' and item_data['pkg'] not in pip_installs: pip_installs.append(item_data['pkg'])
+            elif item_data['type'] == 'custom' and cat_key == 'style' and item_key == 'ohmyzsh':
+                for style_pkg in ('zsh', 'figlet', 'lolcat', 'neofetch'):
+                    if style_pkg not in pkg_installs: pkg_installs.append(style_pkg)
+                custom_commands.append("SAFE_STYLE\nmkdir -p \\\"$HOME/.termux\\\"\ncp \\\"$HOME/.zshrc\\\" \\\"$HOME/.zshrc.backup.$(date +%s)\\\" 2>/dev/null || true\ncat > \\\"$HOME/.zshrc\\\" <<'ZSHRC'\nautoload -Uz compinit && compinit\nsetopt autocd\nalias ll='ls -lah'\nalias update='pkg update && pkg upgrade'\nalias c='clear'\nif command -v neofetch >/dev/null 2>&1; then neofetch; fi\nZSHRC\ngrep -qxF 'exec zsh' \\\"$HOME/.bashrc\\\" 2>/dev/null || echo 'exec zsh' >> \\\"$HOME/.bashrc\\\"\necho '✅ Chiroyli Zsh sozlamasi tayyor. Yangi terminal oching.'\nSAFE_STYLE_END")
             elif item_data['type'] == 'custom': custom_commands.append(item_data['pkg'])
         if pkg_installs: script_content += f"pkg install -y {' '.join(pkg_installs)}\n"
         for cmd in custom_commands:
-            # Masofaviy curl|bash kabi buyruqlar avtomatik bajarilmaydi.
-            script_content += f"\n# Qo'lda ko'rib chiqing va kerak bo'lsa bajaring:\n# {cmd}\n"
+            if cmd.startswith('SAFE_STYLE'):
+                script_content += '\n' + cmd.replace('SAFE_STYLE\n', '').replace('\nSAFE_STYLE_END', '') + '\n'
+            else:
+                # Masofaviy curl|bash kabi buyruqlar avtomatik bajarilmaydi.
+                script_content += f"\n# Qo'lda ko'rib chiqing va kerak bo'lsa bajaring:\n# {cmd}\n"
         if pip_installs:
             script_content += "pip install --upgrade pip || true\n"
             script_content += f"pip install {' '.join(pip_installs)}\n"
