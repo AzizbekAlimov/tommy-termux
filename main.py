@@ -108,9 +108,11 @@ async def init_db():
             await conn.execute('''CREATE TABLE IF NOT EXISTS file_categories (
                 id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL UNIQUE,
                 icon VARCHAR(10) DEFAULT '📁',
+                parent_id INT REFERENCES file_categories(id) ON DELETE CASCADE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
             await conn.execute("ALTER TABLE files ADD COLUMN IF NOT EXISTS category_id INT")
+            await conn.execute("ALTER TABLE file_categories ADD COLUMN IF NOT EXISTS parent_id INT REFERENCES file_categories(id) ON DELETE CASCADE")
             await conn.execute('''CREATE TABLE IF NOT EXISTS updates_history (
                 id SERIAL PRIMARY KEY, title VARCHAR(255), description TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -135,16 +137,11 @@ async def init_db():
 
 async def ensure_default_categories():
     if not db_pool: return
-    defaults = [("Lua Fayllar", "📙"), ("Python Fayllar", "🐍")]
     async with db_pool.acquire() as conn:
-        for name, icon in defaults:
-            try:
-                await conn.execute(
-                    'INSERT INTO file_categories (name, icon) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
-                    name, icon
-                )
-            except Exception as e:
-                logging.error(f"Default kategoriya xatosi ({name}): {e}")
+        # Eski avtomatik Python/Lua bo'limlari endi ishlatilmaydi.
+        await conn.execute("""DELETE FROM files WHERE category_id IN
+            (SELECT id FROM file_categories WHERE name IN ('Lua Fayllar', 'Python Fayllar'))""")
+        await conn.execute("DELETE FROM file_categories WHERE name IN ('Lua Fayllar', 'Python Fayllar')")
 
 async def add_user(user_id, lang='uz'):
     if not db_pool: return
@@ -205,30 +202,35 @@ async def get_top_users():
 async def get_all_categories():
     if not db_pool: return []
     async with db_pool.acquire() as conn:
-        return await conn.fetch('SELECT id, name, icon FROM file_categories ORDER BY id ASC')
+        return await conn.fetch('SELECT id, name, icon, parent_id FROM file_categories WHERE parent_id IS NULL ORDER BY id ASC')
+
+async def get_child_categories(parent_id):
+    if not db_pool: return []
+    async with db_pool.acquire() as conn:
+        return await conn.fetch('SELECT id, name, icon, parent_id FROM file_categories WHERE parent_id = $1 ORDER BY id ASC', parent_id)
 
 async def get_category_by_name(name):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
-        return await conn.fetchrow('SELECT id, name, icon FROM file_categories WHERE name = $1', name)
+        return await conn.fetchrow('SELECT id, name, icon, parent_id FROM file_categories WHERE name = $1', name)
 
-async def add_category(name, icon='📁'):
+async def add_category(name, icon='📁', parent_id=None):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
-        existing = await conn.fetchrow('SELECT id FROM file_categories WHERE name = $1', name)
+        existing = await conn.fetchrow('SELECT id FROM file_categories WHERE name = $1 AND parent_id IS NOT DISTINCT FROM $2', name, parent_id)
         if existing:
             return existing['id']
-        return await conn.fetchval('INSERT INTO file_categories (name, icon) VALUES ($1, $2) RETURNING id', name, icon)
+        return await conn.fetchval('INSERT INTO file_categories (name, icon, parent_id) VALUES ($1, $2, $3) RETURNING id', name, icon, parent_id)
 
 async def get_category_by_id(cat_id):
     if not db_pool: return None
     async with db_pool.acquire() as conn:
-        return await conn.fetchrow('SELECT id, name, icon FROM file_categories WHERE id = $1', cat_id)
+        return await conn.fetchrow('SELECT id, name, icon, parent_id FROM file_categories WHERE id = $1', cat_id)
 
 async def get_files_by_category(cat_id):
     if not db_pool: return []
     async with db_pool.acquire() as conn:
-        return await conn.fetch('SELECT id, title, is_premium, file_type FROM files WHERE category_id = $1 ORDER BY id DESC', cat_id)
+        return await conn.fetch('SELECT id, title, is_premium, file_type FROM files WHERE category_id = $1 ORDER BY id ASC', cat_id)
 
 async def add_file_db_cat(title, file_id, file_type, category_id, is_premium=False):
     if not db_pool: return
@@ -239,8 +241,14 @@ async def add_file_db_cat(title, file_id, file_type, category_id, is_premium=Fal
 async def delete_category(cat_id):
     if not db_pool: return
     async with db_pool.acquire() as conn:
-        await conn.execute('DELETE FROM files WHERE category_id = $1', cat_id)
-        await conn.execute('DELETE FROM file_categories WHERE id = $1', cat_id)
+        await conn.execute('''WITH RECURSIVE tree AS (
+            SELECT id FROM file_categories WHERE id = $1
+            UNION ALL SELECT c.id FROM file_categories c JOIN tree t ON c.parent_id = t.id
+        ) DELETE FROM files WHERE category_id IN (SELECT id FROM tree)''', cat_id)
+        await conn.execute('''WITH RECURSIVE tree AS (
+            SELECT id FROM file_categories WHERE id = $1
+            UNION ALL SELECT c.id FROM file_categories c JOIN tree t ON c.parent_id = t.id
+        ) DELETE FROM file_categories WHERE id IN (SELECT id FROM tree)''', cat_id)
 
 async def delete_file_by_id(file_id):
     if not db_pool: return
@@ -383,7 +391,6 @@ TEXTS = {
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
         'btn_change_lang': "🌐 Til", 'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar",
-        'btn_lua_files': "📙 LUA FILES", 'btn_py_files': "🐍 PYTHON FILES",
         'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Kunlik Masala", 'btn_theme': "🎨 Termux Temasi",
         'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
         'btn_python': "🐍 PYTHON OLISH", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
@@ -551,7 +558,6 @@ def get_main_menu(lang, user_id):
     t = TEXTS[lang]
     keyboard = [
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_lua_files'], callback_data="quick_cat_Lua Fayllar"), InlineKeyboardButton(t['btn_py_files'], callback_data="quick_cat_Python Fayllar")],
         [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
         [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
         [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
@@ -691,9 +697,11 @@ def get_files_categories_keyboard(lang, categories):
     keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_category_files_keyboard(lang, files, cat_id, is_admin=False):
+def get_category_files_keyboard(lang, files, cat_id, is_admin=False, children=None, parent_id=None):
     t = TEXTS[lang]
     keyboard = []
+    for child in (children or []):
+        keyboard.append([InlineKeyboardButton(f"📂 {child['name']}", callback_data=(f"admin_open_{child['id']}" if is_admin else f"files_cat_{child['id']}"))])
     for f in files:
         lock = "🔒 " if f['is_premium'] else "📄 "
         if is_admin:
@@ -702,9 +710,11 @@ def get_category_files_keyboard(lang, files, cat_id, is_admin=False):
             keyboard.append([InlineKeyboardButton(f"{lock}{f['title']}", callback_data=f"get_file_{f['id']}")])
     if is_admin:
         keyboard.append([InlineKeyboardButton("🗑 Papkani o'chirish", callback_data=f"admin_delcat_confirm_{cat_id}")])
+        keyboard.append([InlineKeyboardButton("➕ Ichiga papka yaratish", callback_data=f"admin_new_inside_{cat_id}")])
+        keyboard.append([InlineKeyboardButton("🔙 Yuqori papka" if parent_id else "🔙 Papkalar", callback_data=(f"admin_open_{parent_id}" if parent_id else "admin_add_file"))])
         keyboard.append([InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_menu")])
     else:
-        keyboard.append([InlineKeyboardButton(t['files_back_to_cats'], callback_data="files_menu")])
+        keyboard.append([InlineKeyboardButton(t['files_back_to_cats'], callback_data=(f"files_cat_{parent_id}" if parent_id else "files_menu"))])
         keyboard.append([InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
@@ -712,7 +722,8 @@ def get_admin_file_categories_keyboard(lang, categories):
     t = TEXTS[lang]
     keyboard = []
     for cat in categories:
-        keyboard.append([InlineKeyboardButton(f"{cat['icon']} {cat['name']}", callback_data=f"admin_file_cat_{cat['id']}")])
+        keyboard.append([InlineKeyboardButton(f"📂 {cat['icon']} {cat['name']}", callback_data=f"admin_open_{cat['id']}"),
+                         InlineKeyboardButton("➕ Fayl", callback_data=f"admin_file_cat_{cat['id']}")])
     keyboard.append([InlineKeyboardButton(t['admin_btn_new_cat'], callback_data="admin_file_new_cat")])
     if categories:
         keyboard.append([InlineKeyboardButton(t['admin_btn_del_cat'], callback_data="admin_file_delcat_menu")])
@@ -794,10 +805,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not cat:
             return await query.answer("❌ Papka topilmadi", show_alert=True)
         files = await get_files_by_category(cat_id)
-        if not files:
+        children = await get_child_categories(cat_id)
+        if not files and not children:
             return await query.answer(t['files_cat_empty'], show_alert=True)
         text = t['files_cat_menu'].format(cat_name=f"{cat['icon']} {cat['name']}")
-        await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat_id))
+        await edit_or_send(query, context, text, get_category_files_keyboard(lang, files, cat_id, children=children, parent_id=cat['parent_id']))
 
     elif data.startswith("get_file_"):
         file_id = int(data.replace("get_file_", ""))
@@ -817,6 +829,12 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_video(chat_id=chat_id, video=file_data['file_id'], caption=f"🎬 {file_data['title']}")
             elif file_data['file_type'] == 'photo':
                 await context.bot.send_photo(chat_id=chat_id, photo=file_data['file_id'], caption=f"🖼 {file_data['title']}")
+            elif file_data['file_type'] == 'audio':
+                await context.bot.send_audio(chat_id=chat_id, audio=file_data['file_id'], caption=f"🎵 {file_data['title']}")
+            elif file_data['file_type'] == 'voice':
+                await context.bot.send_voice(chat_id=chat_id, voice=file_data['file_id'], caption=f"🎙 {file_data['title']}")
+            elif file_data['file_type'] == 'animation':
+                await context.bot.send_animation(chat_id=chat_id, animation=file_data['file_id'], caption=f"🎞 {file_data['title']}")
         except Exception as e:
             logging.error(f"Fayl yuborishda xato: {e}")
             await context.bot.send_message(chat_id=chat_id, text="❌ Xatolik.")
@@ -825,6 +843,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID: return
         context.user_data.pop('selected_category', None)
         context.user_data.pop('selected_category_name', None)
+        context.user_data['current_folder_id'] = None
         context.user_data['state'] = None
         categories = await get_all_categories()
         text = t['admin_file_choose_cat'] if categories else t['admin_file_no_cats']
@@ -842,8 +861,28 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = t['admin_file_send_to'].format(cat_name=f"{cat['icon']} {cat['name']}")
         await edit_or_send(query, context, text, InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_add_file")]]))
 
+    elif data.startswith("admin_open_"):
+        if user_id != ADMIN_ID: return
+        cat_id = int(data.replace("admin_open_", ""))
+        cat = await get_category_by_id(cat_id)
+        if not cat: return await query.answer("❌ Papka topilmadi", show_alert=True)
+        context.user_data['current_folder_id'] = cat_id
+        files = await get_files_by_category(cat_id)
+        children = await get_child_categories(cat_id)
+        rows = [[InlineKeyboardButton("➕ Fayl qo'shish", callback_data=f"admin_file_cat_{cat_id}")]]
+        rows += list(get_category_files_keyboard(lang, files, cat_id, is_admin=True, children=children, parent_id=cat['parent_id']).inline_keyboard)
+        await edit_or_send(query, context, f"📂 **{cat['name']}**", InlineKeyboardMarkup(rows))
+
+    elif data.startswith("admin_new_inside_"):
+        if user_id != ADMIN_ID: return
+        parent_id = int(data.replace("admin_new_inside_", ""))
+        context.user_data['current_folder_id'] = parent_id
+        context.user_data['state'] = 'in_new_cat_name'
+        await edit_or_send(query, context, t['admin_file_new_cat_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data=f"admin_open_{parent_id}")]]))
+
     elif data == "admin_file_new_cat":
         if user_id != ADMIN_ID: return
+        context.user_data['current_folder_id'] = None
         context.user_data['state'] = 'in_new_cat_name'
         await edit_or_send(query, context, t['admin_file_new_cat_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_add_file")]]))
 
@@ -1547,7 +1586,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(t['admin_file_cancel']); return
         if update.message.text:
             cat_name = update.message.text.strip()[:100]
-            new_id = await add_category(cat_name, icon='📁')
+            new_id = await add_category(cat_name, icon='📁', parent_id=context.user_data.get('current_folder_id'))
             if new_id:
                 context.user_data['selected_category'] = new_id
                 context.user_data['selected_category_name'] = f"📁 {cat_name}"
@@ -1565,10 +1604,13 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = None
             context.user_data.pop('selected_category', None)
             await update.message.reply_text(t['admin_file_cancel']); return
-        if update.message.document or update.message.video or update.message.photo:
+        if update.message.document or update.message.video or update.message.photo or update.message.audio or update.message.voice or update.message.animation:
             if update.message.document: file_id = update.message.document.file_id; ftype = 'document'
             elif update.message.video: file_id = update.message.video.file_id; ftype = 'video'
-            else: file_id = update.message.photo[-1].file_id; ftype = 'photo'
+            elif update.message.photo: file_id = update.message.photo[-1].file_id; ftype = 'photo'
+            elif update.message.audio: file_id = update.message.audio.file_id; ftype = 'audio'
+            elif update.message.voice: file_id = update.message.voice.file_id; ftype = 'voice'
+            else: file_id = update.message.animation.file_id; ftype = 'animation'
             context.user_data['temp_file_id'] = file_id
             context.user_data['temp_file_type'] = ftype
             context.user_data['state'] = 'in_file_title'
@@ -1589,6 +1631,10 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ftype = context.user_data.get('temp_file_type')
             cat_id = context.user_data.get('selected_category')
             cat_name = context.user_data.get('selected_category_name', 'Papka')
+            if not file_id or not cat_id:
+                await update.message.reply_text("❌ Fayl yoki papka topilmadi. Qaytadan urinib ko'ring.")
+                context.user_data['state'] = None
+                return
             await add_file_db_cat(title, file_id, ftype, cat_id, is_premium=False)
             context.user_data['state'] = None
             for k in ['selected_category', 'selected_category_name', 'temp_file_id', 'temp_file_type']:
