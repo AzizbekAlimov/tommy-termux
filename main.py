@@ -397,6 +397,21 @@ async def delete_lesson_entry(track, lesson_number):
         result = await conn.execute('DELETE FROM lesson_entries WHERE track=$1 AND lesson_number=$2', track, lesson_number)
     return result.endswith('1')
 
+async def send_lesson_attachment(bot, chat_id, entry):
+    """Faylni bot chatiga yuboradi; t.me link bo'lsa kanalga yubormaydi."""
+    url = entry['attachment_url']
+    if url:
+        match = re.match(r'^https?://t\.me/([^/?#]+)/([0-9]+)', url.strip(), re.IGNORECASE)
+        if match:
+            await bot.copy_message(chat_id=chat_id, from_chat_id='@' + match.group(1).lstrip('@'), message_id=int(match.group(2)))
+            return True
+        await bot.send_message(chat_id=chat_id, text="📥 Faylni olish:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(entry['button_text'] or "📥 FAYLNI OLISH", url=url)]]))
+        return True
+    if entry['attachment_file_id']:
+        await bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "📥 Fayl")
+        return True
+    return False
+
 def get_level(score):
     if score < 100: return "🥉 Boshlovchi"
     elif score < 300: return "🥈 O'rta"
@@ -454,7 +469,7 @@ async def is_subscribed(user_id, context):
 # ==========================================
 LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101, 8: 104, 9: 108}
 PYTHON_EXTRA_VIDEOS = [106]
-LUA_LESSON_ATTACHMENTS = {9: "https://t.me/termux_tutoril/109"}
+LUA_LESSON_ATTACHMENTS = {9: 109}
 
 CHALLENGES_DATA = [
     {"id": 1, "text": "Python yordamida berilgan sonning faktorialini hisoblovchi funksiya yozing."},
@@ -1398,10 +1413,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']))
                 else:
                     await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 {lesson_num}-darslik")
-                if entry['attachment_url']:
-                    await context.bot.send_message(chat_id=chat_id, text="🐍 Python fayli:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(entry['button_text'] or "🐍 PYTHON OLISH", url=entry['attachment_url'])]]))
-                elif entry['attachment_file_id']:
-                    await context.bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "🐍 Python")
+                if entry['attachment_url'] or entry['attachment_file_id']:
+                    await send_lesson_attachment(context.bot, chat_id, entry)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Termux darslik xatosi: %s", exc)
@@ -1429,10 +1442,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']))
                 else:
                     await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 Lua {lesson_num}-darslik")
-                if entry['attachment_url']:
-                    await context.bot.send_message(chat_id=chat_id, text="🐍 Python fayli:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(entry['button_text'] or "🐍 PYTHON OLISH", url=entry['attachment_url'])]]))
-                elif entry['attachment_file_id']:
-                    await context.bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "🐍 Python")
+                if entry['attachment_url'] or entry['attachment_file_id']:
+                    await send_lesson_attachment(context.bot, chat_id, entry)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Lua darslik xatosi: %s", exc)
@@ -1444,7 +1455,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_id = LUA_LESSONS.get(lesson_num, 93)
         buttons = []
         if lesson_num in LUA_LESSON_ATTACHMENTS:
-            buttons.append([InlineKeyboardButton(t['btn_python'], url=LUA_LESSON_ATTACHMENTS[lesson_num])])
+            buttons.append([InlineKeyboardButton(t['btn_python'], callback_data=f"lua_file_{lesson_num}")])
         elif lesson_num == 8:
             buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
         buttons.append([InlineKeyboardButton(t['btn_lessons_menu'], callback_data="lua_page_1")])
@@ -1454,6 +1465,18 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError as e:
             logging.error(f"Lua xato: {e}")
             await context.bot.send_message(chat_id=chat_id, text=t['text_error_vid'], parse_mode='Markdown')
+    elif data.startswith("lua_file_"):
+        # Foydalanuvchi kanalga kirmaydi: fayl kanal postidan bot chatiga ko'chiriladi.
+        try:
+            lesson_num = int(data.split("_")[2])
+            post_id = LUA_LESSON_ATTACHMENTS.get(lesson_num)
+            if not post_id:
+                return await query.answer("❌ Fayl topilmadi", show_alert=True)
+            await query.answer("⏳ Fayl yuborilmoqda...")
+            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=post_id)
+        except (TelegramError, ValueError) as exc:
+            logging.error("Python faylini yuborishda xato: %s", exc)
+            await query.answer("❌ Faylni yuborib bo'lmadi. Bot kanalga admin ekanini tekshiring.", show_alert=True)
     elif data == "python_extra":
         try:
             for v in PYTHON_EXTRA_VIDEOS:
