@@ -143,6 +143,7 @@ async def init_db():
                 id SERIAL PRIMARY KEY, lesson_number INT UNIQUE,
                 message_id INT, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
+            await conn.execute('DELETE FROM auto_lessons WHERE lesson_number = 48')
             await conn.execute('''CREATE TABLE IF NOT EXISTS bot_settings (
                 key VARCHAR(50) PRIMARY KEY, value VARCHAR(255)
             )''')
@@ -336,7 +337,7 @@ async def get_all_lessons():
     lessons[47] = 107
     if db_pool:
         async with db_pool.acquire() as conn:
-            rows = await conn.fetch('SELECT lesson_number, message_id FROM auto_lessons')
+            rows = await conn.fetch('SELECT lesson_number, message_id FROM auto_lessons WHERE lesson_number <> 48')
             for row in rows:
                 lessons[row['lesson_number']] = row['message_id']
     return lessons
@@ -345,7 +346,7 @@ async def get_max_lesson_number():
     max_num = 47
     if db_pool:
         async with db_pool.acquire() as conn:
-            db_max = await conn.fetchval('SELECT MAX(lesson_number) FROM auto_lessons')
+            db_max = await conn.fetchval('SELECT MAX(lesson_number) FROM auto_lessons WHERE lesson_number <> 48')
             if db_max: max_num = max(max_num, db_max)
             entry_max = await conn.fetchval("SELECT MAX(lesson_number) FROM lesson_entries WHERE track = 'termux'")
             if entry_max: max_num = max(max_num, entry_max)
@@ -377,6 +378,12 @@ async def save_lesson_attachment(track, lesson_number, file_id=None, file_type=N
             WHERE track=$6 AND lesson_number=$7''', file_id, file_type, file_name, url,
             button_text[:100], track, lesson_number)
     return True
+
+async def delete_lesson_entry(track, lesson_number):
+    if not db_pool: return False
+    async with db_pool.acquire() as conn:
+        result = await conn.execute('DELETE FROM lesson_entries WHERE track=$1 AND lesson_number=$2', track, lesson_number)
+    return result.endswith('1')
 
 def get_level(score):
     if score < 100: return "🥉 Boshlovchi"
@@ -433,8 +440,9 @@ async def is_subscribed(user_id, context):
 # ==========================================
 # MA'LUMOTLAR
 # ==========================================
-LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101, 8: 104}
+LUA_LESSONS = {1: 93, 2: 94, 3: 97, 4: 98, 5: 99, 6: 100, 7: 101, 8: 104, 9: 108}
 PYTHON_EXTRA_VIDEOS = [106]
+LUA_LESSON_ATTACHMENTS = {9: "https://t.me/termux_tutoril/109"}
 
 CHALLENGES_DATA = [
     {"id": 1, "text": "Python yordamida berilgan sonning faktorialini hisoblovchi funksiya yozing."},
@@ -976,9 +984,24 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📽️ TERMUX DARSLIKLAR", callback_data="admin_lesson_track_termux")],
             [InlineKeyboardButton("📽️ LUA PAK DARSLIKLAR", callback_data="admin_lesson_track_lua")],
+            [InlineKeyboardButton("🗑 Darslik/video o'chirish", callback_data="admin_lesson_delete")],
             [InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]
         ])
         await edit_or_send(query, context, "📚 **Darslik qo'shish**\n\nQaysi bo'limga qo'shasiz?", kb)
+
+    elif data == "admin_lesson_delete":
+        if user_id != ADMIN_ID: return
+        context.user_data['state'] = 'in_lesson_delete_track'
+        await edit_or_send(query, context, "🗑 Qaysi bo'limdan o'chirasiz?", InlineKeyboardMarkup([
+            [InlineKeyboardButton("TERMUX", callback_data="admin_delete_track_termux"), InlineKeyboardButton("LUA", callback_data="admin_delete_track_lua")],
+            [InlineKeyboardButton(t['btn_back'], callback_data="admin_lesson_add")]
+        ]))
+
+    elif data in ("admin_delete_track_termux", "admin_delete_track_lua"):
+        if user_id != ADMIN_ID: return
+        context.user_data['lesson_track'] = data.rsplit('_', 1)[-1]
+        context.user_data['state'] = 'in_lesson_delete_number'
+        await edit_or_send(query, context, "🔢 O'chiriladigan darslik raqamini yuboring:", InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_lesson_add")]]))
 
     elif data in ("admin_lesson_track_termux", "admin_lesson_track_lua"):
         if user_id != ADMIN_ID: return
@@ -1406,7 +1429,10 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await query.answer("ℹ️ Bu darslik hali qo'shilmagan.", show_alert=True)
         message_id = LUA_LESSONS.get(lesson_num, 93)
         buttons = []
-        if lesson_num == 8: buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
+        if lesson_num in LUA_LESSON_ATTACHMENTS:
+            buttons.append([InlineKeyboardButton(t['btn_python'], url=LUA_LESSON_ATTACHMENTS[lesson_num])])
+        elif lesson_num == 8:
+            buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
         buttons.append([InlineKeyboardButton(t['btn_lessons_menu'], callback_data="lua_page_1")])
         try:
             await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=InlineKeyboardMarkup(buttons))
@@ -1778,16 +1804,39 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🎥 Video yuboring yoki kanal postini shu yerga forward qiling.\n\nBekor qilish: /cancel")
         return
 
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_lesson_delete_number':
+        if not update.message.text or not update.message.text.strip().isdigit():
+            await update.message.reply_text("❌ Darslik raqamini raqam bilan yuboring.")
+            return
+        number = int(update.message.text.strip())
+        deleted = await delete_lesson_entry(context.user_data.get('lesson_track'), number)
+        context.user_data['state'] = None
+        await update.message.reply_text("✅ Darslik/video o'chirildi." if deleted else "ℹ️ Bu raqamda Admin Panel orqali qo'shilgan video topilmadi.")
+        return
+
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_lesson_video':
         if update.message.text == '/cancel':
             context.user_data['state'] = None
             await update.message.reply_text("❌ Darslik qo'shish bekor qilindi.")
             return
-        if not update.message.video:
-            await update.message.reply_text("⚠️ Faqat video yuboring yoki kanal videosini forward qiling.")
-            return
         track = context.user_data.get('lesson_track')
         number = context.user_data.get('lesson_number')
+        if update.message.text:
+            match = re.match(r'^https?://t\.me/([^/]+)/([0-9]+)', update.message.text.strip())
+            if not match:
+                await update.message.reply_text("❌ Kanal posti linki kerak: https://t.me/kanal/123")
+                return
+            try:
+                source_chat = await context.bot.get_chat('@' + match.group(1).lstrip('@'))
+                await save_lesson_entry(track, number, 'channel', match.group(2), source_chat.id)
+                context.user_data['state'] = 'in_lesson_attachment'
+                await update.message.reply_text("✅ Video linki saqlandi.\n\nPython fayli/linkini yuboring yoki /skip yozing.")
+            except Exception:
+                await update.message.reply_text("❌ Kanal topilmadi yoki bot kanal postini ko'ra olmaydi.")
+            return
+        if not update.message.video:
+            await update.message.reply_text("⚠️ Video, forward qilingan kanal posti yoki https://t.me/kanal/123 link yuboring.")
+            return
         source_type, source_id, source_chat_id = 'file', update.message.video.file_id, None
         origin = getattr(update.message, 'forward_origin', None)
         if origin and getattr(origin, 'message_id', None) and getattr(origin, 'chat', None):
@@ -1811,13 +1860,15 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not re.match(r'^https?://', url, re.IGNORECASE):
                 await update.message.reply_text("❌ Faqat http:// yoki https:// link yuboring.")
                 return
-            await save_lesson_attachment(track, number, url=url)
+            await save_lesson_attachment(track, number, url=url, button_text=get_file_button_info(url, 'document'))
             context.user_data['state'] = None
             await update.message.reply_text("✅ Python linki darslik tagiga qo'shildi.")
             return
         if update.message.document:
+            file_name = update.message.document.file_name or 'file'
             await save_lesson_attachment(track, number, file_id=update.message.document.file_id,
-                                         file_type='document', file_name=update.message.document.file_name)
+                                         file_type='document', file_name=file_name,
+                                         button_text=get_file_button_info(file_name, 'document'))
             context.user_data['state'] = None
             await update.message.reply_text("✅ Python fayli darslik tagiga qo'shildi.")
             return
