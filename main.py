@@ -621,7 +621,7 @@ TEXTS = {
         'ai_wait': "🧠...", 'ai_error': "❌ {error}", 'ai_code_found': "✅",
         'ai_no_code': "🤖 **AI:**\n\n{text}",
         'ai_vision_error': "⚠️", 'ai_unsupported_file': "⚠️ Faqat kod.", 'ai_video_error': "🎥",
-        'ai_file_too_large': "⚠️ Katta.", 'ai_text_too_long': "⚠️ Uzun.", 'ai_not_coding': "🤖 Faqat dasturlash.",
+        'ai_file_too_large': "⚠️ Fayl 1 MB dan katta. Python yoki Lua faylini 1 MB gacha kichraytirib yuboring.", 'ai_text_too_long': "⚠️ Kod matni juda uzun. Fayl 1 MB dan kichik bo'lsa ham, AI uchun kod 300 000 belgidan oshmasligi kerak.", 'ai_not_coding': "🤖 Faqat dasturlash bo'yicha topshiriq yoki kod yuboring.",
         'ai_limit_info': "ℹ️ *Qoldi: {limit} ta*",
         'java_info_text': "☕ **Java Termux'da**\n\n**1. O'rnatish:**\n```bash\npkg update && pkg upgrade -y\npkg install openjdk-17 -y\n```\n\n**2. Tekshirish:**\n`java -version`\n\n**3. Fayl yaratish:**\n```bash\nnano Salom.java\n```\n\n**4. Kod:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n\n**5. Kompilyatsiya:**\n```bash\njavac Salom.java\njava Salom\n```",
         'arch_info_text': "📱 **64-bit telefonni 32-bit qilish haqida to'liq qo'llanma**\n\n⚠️ **Eng muhim javob:** telefon protsessorini haqiqiy apparat darajasida 64-bitdan 32-bitga aylantirib bo'lmaydi. ARM64 protsessor 32-bit dasturlarni ishlatishi mumkin, lekin uning arxitekturasi o'zgarmaydi. Hech qanday Termux buyrug'i, APK yoki `build.prop` uni haqiqiy 32-bit qilmaydi.\n\n**1. Arxitekturani tekshiring (Termux):**\n```bash\nuname -m\ndpkg --print-architecture\ngetprop ro.product.cpu.abilist\ntermux-info\n```\n\n**Natijalar:**\n• `aarch64`, `arm64-v8a`, `arm64` — 64-bit ARM\n• `armv7l`, `armeabi-v7a`, `arm` — 32-bit ARM\n• `x86_64` — 64-bit Intel/AMD\n• `x86` — 32-bit Intel/AMD\n\n**2. Nimalar mumkin?**\n✅ 64-bit telefonda 32-bit ilova ishlashi — faqat Android va ishlab chiqaruvchi 32-bit ABI'ni qo'llasa.\n✅ Dastur ishlab chiqaruvchisi bergan `armeabi-v7a` APKni o'rnatish.\n✅ Termux'da mos 32-bit binary/paketdan foydalanish.\n⚠️ 64-bit-only yangi qurilmalarda 32-bit APK umuman ishlamasligi mumkin. Bu bot yoki Termux xatosi emas, Android tizimi cheklovi.\n\n**3. Termux uchun xavfsiz yo'l:**\n```bash\npkg update && pkg upgrade -y\nuname -m\ntermux-info\n```\nAgar `aarch64` chiqsa, odatda ARM64 Termux paketlarini ishlating. 32-bit paketni majburan o'rnatish dependency va `Exec format error` keltirishi mumkin.\n\n**4. 32-bit dastur ishlamasa:**\n```bash\nfile dastur_nomi\nreadelf -h dastur_nomi | grep Class\n```\n`ELFCLASS32` — 32-bit, `ELFCLASS64` — 64-bit.\n\n**5. Emulyatsiya haqida:**\n`proot-distro` Linux distributivini o'rnatadi, lekin telefon arxitekturasini o'zgartirmaydi. QEMU orqali boshqa arxitekturani emulyatsiya qilish mumkin, ammo u sekin, batareya ko'p sarflaydi va hamma dastur ishlamaydi.\n\n**6. Nima qilmaslik kerak:**\n• Noma'lum “32-bit converter” APK o'rnatmang.\n• `build.prop`ni tasodifiy o'zgartirmang.\n• Bootloader/ROMni backup'siz flash qilmang.\n• `arm64` APKni shunchaki nomini o'zgartirib `armeabi-v7a` qilmang.\n\n**Xulosa:** apparatni 64-bitdan 32-bitga aylantirib bo'lmaydi. To'g'ri yo'l — qurilma ABI'sini tekshirish, mos APK/binary tanlash yoki ishlab chiquvchidan 32-bit build so'rash.",
@@ -1630,7 +1630,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_query = update.message.text.strip()
             if len(user_query) < 15 and user_query.lower() in ['salom', 'assalom', 'hi', 'hello']:
                 await msg.edit_text(t['ai_not_coding']); return
-            if len(user_query) > 80000: await msg.edit_text(t['ai_text_too_long']); return
+            if len(user_query) > 300000: await msg.edit_text(t['ai_text_too_long']); return
             previous_code = context.user_data.get('ai_last_code', '')
             previous_name = context.user_data.get('ai_last_filename', 'code.py')
             short_fix = user_query.lower() in ('tuzatib ber', 'tuzat', 'fix', 'fix it', 'tekshir', 'xatoni tuzat')
@@ -1646,19 +1646,24 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_query = "Fix this code error from image."
         elif update.message.document:
             doc = update.message.document
-            if (doc.file_size or 0) > 2 * 1024 * 1024: await msg.edit_text(t['ai_file_too_large']); return
+            if (doc.file_size or 0) > 1 * 1024 * 1024:
+                await msg.edit_text("⚠️ Fayl 1 MB dan katta. Python yoki Lua faylini 1 MB gacha kichraytirib yuboring.")
+                return
             doc_name = (doc.file_name or 'code.txt').lower()
             code_exts = ('.py', '.lua', '.txt', '.js', '.ts', '.jsx', '.tsx', '.cpp', '.c', '.h', '.html', '.css', '.java', '.kt', '.sh', '.bash', '.json', '.xml', '.yaml', '.yml', '.sql', '.php', '.rb', '.go', '.rs')
             if doc_name.endswith(code_exts):
                 content = await (await doc.get_file()).download_as_bytearray()
                 try:
-                    text_content = content.decode('utf-8')
-                    if len(text_content) > 80000: await msg.edit_text(t['ai_text_too_long']); return
+                    text_content = content.decode('utf-8-sig')
+                    if len(text_content) > 300000:
+                        await msg.edit_text("⚠️ Kod matni 300 000 belgidan oshdi. Fayl hajmi 1 MB dan kichik bo'lsa ham, AI uchun kodni qisqartiring.")
+                        return
                     filename = doc.file_name or 'code.txt'
                     context.user_data['ai_last_code'] = text_content
                     context.user_data['ai_last_filename'] = filename
                     context.user_data['ai_last_language'] = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'text'
                     user_query = f"Fayl: {filename}\n\n{text_content}\n\nKodni to'liq tahlil qil va foydalanuvchi tilida tuzat."
+                    await msg.edit_text(f"🧠 {filename} qabul qilindi. Kod tahlil qilinmoqda...\n⏳ Iltimos, kuting.")
                 except UnicodeDecodeError: await msg.edit_text(t['ai_unsupported_file']); return
             else: await msg.edit_text(t['ai_unsupported_file']); return
         else: await msg.edit_text(t['ai_video_error']); return
@@ -1686,22 +1691,25 @@ Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xav
 
         if not ai_reply and openrouter_client and not is_image:
             try:
-                r = await openrouter_client.chat.completions.create(model="qwen/qwen-2.5-coder-32b-instruct:free",
+                r = await asyncio.wait_for(openrouter_client.chat.completions.create(model="qwen/qwen-2.5-coder-32b-instruct:free",
                     messages=[{"role":"system","content":sys_prompt},{"role":"user","content":user_query}], max_tokens=4000)
+                    , timeout=180)
                 ai_reply = r.choices[0].message.content
             except Exception as e: logging.error(f"OR: {e}")
 
         if not ai_reply and mistral_client and not is_image:
             try:
-                r = await mistral_client.chat.completions.create(model="codestral-latest",
+                r = await asyncio.wait_for(mistral_client.chat.completions.create(model="codestral-latest",
                     messages=[{"role":"system","content":sys_prompt},{"role":"user","content":user_query}], max_tokens=4000)
+                    , timeout=180)
                 ai_reply = r.choices[0].message.content
             except Exception as e: logging.error(f"Mistral: {e}")
 
         if not ai_reply and groq_client and not is_image:
             try:
-                r = await groq_client.chat.completions.create(model="llama-3.3-70b-versatile",
+                r = await asyncio.wait_for(groq_client.chat.completions.create(model="llama-3.3-70b-versatile",
                     messages=[{"role":"system","content":sys_prompt},{"role":"user","content":user_query}], max_tokens=4000)
+                    , timeout=180)
                 ai_reply = r.choices[0].message.content
             except Exception as e: logging.error(f"Groq: {e}")
 
