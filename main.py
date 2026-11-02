@@ -527,7 +527,7 @@ TEXTS = {
         'choose_lang': "👋 **Assalomu alaykum!**\n\nIltimos, o'zingizga qulay tilni tanlang:",
         'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
         'btn_termux': "📽️ TERMUX DARSLIK", 'btn_lua': "📽️ LUA PAK DARSLIK",
-        'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH",
+        'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH", 'btn_arch': "📱 32/64-bit",
         'btn_ai': "🤖 AI Dasturchi", 'btn_profile': "👤 Mening profilim",
         'btn_top': "🏆 Top 10", 'btn_quiz': "🧠 Test (Ball)", 'btn_security': "🛡️ Kiberxavfsizlik",
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
@@ -624,6 +624,7 @@ TEXTS = {
         'ai_file_too_large': "⚠️ Katta.", 'ai_text_too_long': "⚠️ Uzun.", 'ai_not_coding': "🤖 Faqat dasturlash.",
         'ai_limit_info': "ℹ️ *Qoldi: {limit} ta*",
         'java_info_text': "☕ **Java Termux'da**\n\n**1. O'rnatish:**\n```bash\npkg update && pkg upgrade -y\npkg install openjdk-17 -y\n```\n\n**2. Tekshirish:**\n`java -version`\n\n**3. Fayl yaratish:**\n```bash\nnano Salom.java\n```\n\n**4. Kod:**\n```java\npublic class Salom {\n    public static void main(String[] args) {\n        System.out.println(\"Salom, Termux!\");\n    }\n}\n```\n\n**5. Kompilyatsiya:**\n```bash\njavac Salom.java\njava Salom\n```",
+        'arch_info_text': "📱 **64-bit telefonni 32-bit qilish haqida to'liq qo'llanma**\n\n⚠️ **Eng muhim javob:** telefon protsessorini haqiqiy apparat darajasida 64-bitdan 32-bitga aylantirib bo'lmaydi. ARM64 protsessor 32-bit dasturlarni ishlatishi mumkin, lekin uning arxitekturasi o'zgarmaydi. Hech qanday Termux buyrug'i, APK yoki `build.prop` uni haqiqiy 32-bit qilmaydi.\n\n**1. Arxitekturani tekshiring (Termux):**\n```bash\nuname -m\ndpkg --print-architecture\ngetprop ro.product.cpu.abilist\ntermux-info\n```\n\n**Natijalar:**\n• `aarch64`, `arm64-v8a`, `arm64` — 64-bit ARM\n• `armv7l`, `armeabi-v7a`, `arm` — 32-bit ARM\n• `x86_64` — 64-bit Intel/AMD\n• `x86` — 32-bit Intel/AMD\n\n**2. Nimalar mumkin?**\n✅ 64-bit telefonda 32-bit ilova ishlashi — faqat Android va ishlab chiqaruvchi 32-bit ABI'ni qo'llasa.\n✅ Dastur ishlab chiqaruvchisi bergan `armeabi-v7a` APKni o'rnatish.\n✅ Termux'da mos 32-bit binary/paketdan foydalanish.\n⚠️ 64-bit-only yangi qurilmalarda 32-bit APK umuman ishlamasligi mumkin. Bu bot yoki Termux xatosi emas, Android tizimi cheklovi.\n\n**3. Termux uchun xavfsiz yo'l:**\n```bash\npkg update && pkg upgrade -y\nuname -m\ntermux-info\n```\nAgar `aarch64` chiqsa, odatda ARM64 Termux paketlarini ishlating. 32-bit paketni majburan o'rnatish dependency va `Exec format error` keltirishi mumkin.\n\n**4. 32-bit dastur ishlamasa:**\n```bash\nfile dastur_nomi\nreadelf -h dastur_nomi | grep Class\n```\n`ELFCLASS32` — 32-bit, `ELFCLASS64` — 64-bit.\n\n**5. Emulyatsiya haqida:**\n`proot-distro` Linux distributivini o'rnatadi, lekin telefon arxitekturasini o'zgartirmaydi. QEMU orqali boshqa arxitekturani emulyatsiya qilish mumkin, ammo u sekin, batareya ko'p sarflaydi va hamma dastur ishlamaydi.\n\n**6. Nima qilmaslik kerak:**\n• Noma'lum “32-bit converter” APK o'rnatmang.\n• `build.prop`ni tasodifiy o'zgartirmang.\n• Bootloader/ROMni backup'siz flash qilmang.\n• `arm64` APKni shunchaki nomini o'zgartirib `armeabi-v7a` qilmang.\n\n**Xulosa:** apparatni 64-bitdan 32-bitga aylantirib bo'lmaydi. To'g'ri yo'l — qurilma ABI'sini tekshirish, mos APK/binary tanlash yoki ishlab chiquvchidan 32-bit build so'rash.",
         'devtools_menu': "🧰 **Developer Tools**",
         'devtools_pass': "🔐 Parol", 'devtools_hash': "🔢 Hash",
         'devtools_b64enc': "📝 Base64 Enc", 'devtools_b64dec': "📝 Base64 Dec",
@@ -727,9 +728,10 @@ def get_main_menu(lang, user_id):
     keyboard = [
         [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
         [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
+        [InlineKeyboardButton(t['btn_arch'], callback_data="arch_info"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
         [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
         [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
-        [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
+        [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet")],
         [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start"), InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
         [InlineKeyboardButton(t['btn_top'], callback_data="top_users"), InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
         [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['streak_btn'], callback_data="daily_bonus")],
@@ -1180,6 +1182,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "java_info":
         await edit_or_send(query, context, t['java_info_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
+    elif data == "arch_info":
+        await edit_or_send(query, context, t['arch_info_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
 
     elif data == "script_menu":
         await edit_or_send(query, context, t['script_cat_menu'], get_script_categories_keyboard(lang))
