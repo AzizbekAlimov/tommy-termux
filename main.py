@@ -933,6 +933,13 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
+    # Telegram tugma ichida GIF/sticker ko'rsatmaydi; barcha amallarda uning
+    # o'rniga rasmiy typing indikatoridan foydalanamiz. Bu menyuni buzmaydi.
+    try:
+        action = 'upload_document' if data.startswith(('lesson_attach_', 'lua_file_', 'get_attach_', 'send_apk')) else 'typing'
+        await context.bot.send_chat_action(chat_id=chat_id, action=action)
+    except Exception:
+        pass
 
     if data == "check_sub":
         SUBSCRIPTION_CACHE.pop(user_id, None)
@@ -1880,6 +1887,11 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lang = context.user_data.get('lang', 'uz')
     t = TEXTS[lang]
+    try:
+        action = 'upload_document' if update.message.document else 'typing'
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
+    except Exception:
+        pass
 
     if user.id == ADMIN_ID and PENDING_VIDEOS:
         if update.message.document or update.message.video or update.message.photo or update.message.audio:
