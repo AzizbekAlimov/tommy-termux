@@ -421,6 +421,18 @@ def get_lesson_video_keyboard(entry, track, lesson_number, back_callback):
     rows.append([InlineKeyboardButton('📚 Darsliklar', callback_data=back_callback)])
     return InlineKeyboardMarkup(rows)
 
+def get_legacy_video_keyboard(track, lesson_number, back_callback, attachment_callback=None):
+    """Database'dagi eski kanal videolari uchun ham til tugmalarini chiqaradi."""
+    rows = [[
+        InlineKeyboardButton('🇺🇿 O‘zbekcha', callback_data=f'lesson_video_{track}_{lesson_number}_uz'),
+        InlineKeyboardButton('🇷🇺 Русский', callback_data=f'lesson_video_{track}_{lesson_number}_ru'),
+        InlineKeyboardButton('🇬🇧 English', callback_data=f'lesson_video_{track}_{lesson_number}_en')
+    ]]
+    if attachment_callback:
+        rows.append([InlineKeyboardButton('📥 Faylni olish', callback_data=attachment_callback)])
+    rows.append([InlineKeyboardButton('📚 Darsliklar', callback_data=back_callback)])
+    return InlineKeyboardMarkup(rows)
+
 async def send_lesson_video_variant(bot, chat_id, entry, lang, caption, reply_markup):
     variant, exact = get_video_variant(entry, lang)
     if variant['source_type'] == 'channel':
@@ -1592,7 +1604,25 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lesson_num = int(number)
         entry = await get_lesson_entry(track, lesson_num)
         if not entry:
-            return await query.answer("❌ Video topilmadi", show_alert=True)
+            if video_lang != 'uz':
+                return await query.answer('⚠️ Bu darslik uchun ushbu tildagi alohida video hali qo‘shilmagan.', show_alert=True)
+            try:
+                if track == 'termux':
+                    legacy_lessons = await get_all_lessons()
+                    legacy_message_id = legacy_lessons.get(lesson_num, lesson_num + 2)
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL,
+                        message_id=legacy_message_id, reply_markup=get_legacy_video_keyboard('termux', lesson_num, 'page_1'))
+                else:
+                    legacy_message_id = LUA_LESSONS.get(lesson_num)
+                    if not legacy_message_id:
+                        return await query.answer('❌ O‘zbekcha video topilmadi.', show_alert=True)
+                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL,
+                        message_id=legacy_message_id, reply_markup=get_legacy_video_keyboard('lua', lesson_num, 'lua_page_1'))
+                await query.message.delete()
+            except Exception:
+                logging.exception('Eski video variantini yuborish xatosi')
+                await query.answer('❌ Video yuborilmadi. Kanal sozlamalarini tekshiring.', show_alert=True)
+            return
         try:
             kb = get_lesson_video_keyboard(entry, track, lesson_num, 'page_1' if track == 'termux' else 'lua_page_1')
             exact = await send_lesson_video_variant(context.bot, chat_id, entry, video_lang,
@@ -1620,7 +1650,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         all_lessons = await get_all_lessons()
         message_id = all_lessons.get(lesson_num, lesson_num + 2)
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_lessons_menu'], callback_data="page_1")]])
+        kb = get_legacy_video_keyboard('termux', lesson_num, 'page_1')
         try:
             await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=kb)
             await query.message.delete()
@@ -1648,7 +1678,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if lesson_num not in LUA_LESSONS and not (await get_lesson_entry('lua', lesson_num)):
             return await query.answer("ℹ️ Bu darslik hali qo'shilmagan.", show_alert=True)
         message_id = LUA_LESSONS.get(lesson_num, 93)
-        buttons = []
+        buttons = [[
+            InlineKeyboardButton('🇺🇿 O‘zbekcha', callback_data=f'lesson_video_lua_{lesson_num}_uz'),
+            InlineKeyboardButton('🇷🇺 Русский', callback_data=f'lesson_video_lua_{lesson_num}_ru'),
+            InlineKeyboardButton('🇬🇧 English', callback_data=f'lesson_video_lua_{lesson_num}_en')
+        ]]
         if lesson_num in LUA_LESSON_ATTACHMENTS:
             buttons.append([InlineKeyboardButton(t['btn_python'], callback_data=f"lua_file_{lesson_num}")])
         elif lesson_num == 8:
