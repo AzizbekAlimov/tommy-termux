@@ -13,6 +13,7 @@ import uuid
 import secrets
 import string
 import json as json_lib
+import html as html_lib
 from urllib.parse import quote
 from io import BytesIO
 from fastapi import FastAPI, Request
@@ -215,6 +216,38 @@ async def get_user_lang(user_id):
         logging.exception('Foydalanuvchi tilini o\'qishda xato')
         return 'uz'
 
+async def broadcast_to_all_users(send_one):
+    """Barcha saqlangan foydalanuvchilarga Telegram limitiga rioya qilib yuboradi."""
+    if not db_pool:
+        return 0, 0
+    async with db_pool.acquire() as conn:
+        users = await conn.fetch('SELECT user_id FROM users ORDER BY user_id')
+    success = fail = 0
+    for row in users:
+        target = row['user_id']
+        if target == ADMIN_ID:
+            continue
+        sent = False
+        for attempt in range(3):
+            try:
+                await send_one(target)
+                success += 1
+                sent = True
+                break
+            except Exception as exc:
+                retry_after = getattr(exc, 'retry_after', None)
+                if retry_after and attempt < 2:
+                    await asyncio.sleep(min(float(retry_after) + 0.5, 60))
+                elif attempt < 2:
+                    await asyncio.sleep(0.8 * (attempt + 1))
+                else:
+                    logging.warning('Broadcast %s yuborilmadi: %s', target, exc)
+        if not sent:
+            fail += 1
+        # Telegram global broadcast limitidan oshmaslik uchun.
+        await asyncio.sleep(0.05)
+    return success, fail
+
 async def add_score(user_id, points):
     if not db_pool: return
     async with db_pool.acquire() as conn:
@@ -396,16 +429,19 @@ async def get_lesson_entry_by_id(entry_id):
         return await conn.fetchrow('SELECT * FROM lesson_entries WHERE id = $1', entry_id)
 
 def get_video_variant(entry, lang):
-    """Tanlangan til videosi; mavjud bo‘lmasa UZ/base fallback."""
+    """Faqat tanlangan til videosini qaytaradi; boshqa tilga fallback qilmaydi."""
     variants = entry['video_variants'] or {}
     if isinstance(variants, str):
         try: variants = json_lib.loads(variants)
         except Exception: variants = {}
-    selected = variants.get(lang) or variants.get('uz')
+    selected = variants.get(lang)
     if selected:
-        return selected, lang in variants
-    return {'source_type': entry['source_type'], 'source_id': entry['source_id'],
-            'source_chat_id': entry['source_chat_id'], 'title': entry['title']}, False
+        return selected, True
+    # Eski yozuvlar database'da variantlarisiz bo‘ladi; ular original/base UZ hisoblanadi.
+    if lang == 'uz' and not variants:
+        return {'source_type': entry['source_type'], 'source_id': entry['source_id'],
+                'source_chat_id': entry['source_chat_id'], 'title': entry['title']}, True
+    return None, False
 
 def get_lesson_video_keyboard(entry, track, lesson_number, back_callback):
     variants = entry['video_variants'] or {}
@@ -435,6 +471,8 @@ def get_legacy_video_keyboard(track, lesson_number, back_callback, attachment_ca
 
 async def send_lesson_video_variant(bot, chat_id, entry, lang, caption, reply_markup):
     variant, exact = get_video_variant(entry, lang)
+    if not variant:
+        return False
     if variant['source_type'] == 'channel':
         await bot.copy_message(chat_id=chat_id, from_chat_id=variant['source_chat_id'],
                                message_id=int(variant['source_id']), reply_markup=reply_markup)
@@ -1641,8 +1679,10 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if entry:
             try:
                 lesson_kb = get_lesson_video_keyboard(entry, 'termux', lesson_num, 'page_1')
-                await send_lesson_video_variant(context.bot, chat_id, entry, lang,
+                sent = await send_lesson_video_variant(context.bot, chat_id, entry, lang,
                     f"📚 {lesson_num}-darslik", lesson_kb)
+                if not sent:
+                    return await query.answer(f"⚠️ {lang.upper()} tilidagi video hali qo‘shilmagan.", show_alert=True)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Termux darslik xatosi: %s", exc)
@@ -1667,8 +1707,10 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if entry:
             try:
                 lesson_kb = get_lesson_video_keyboard(entry, 'lua', lesson_num, 'lua_page_1')
-                await send_lesson_video_variant(context.bot, chat_id, entry, lang,
+                sent = await send_lesson_video_variant(context.bot, chat_id, entry, lang,
                     f"📚 Lua {lesson_num}-darslik", lesson_kb)
+                if not sent:
+                    return await query.answer(f"⚠️ {lang.upper()} tilidagi video hali qo‘shilmagan.", show_alert=True)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Lua darslik xatosi: %s", exc)
@@ -2053,7 +2095,6 @@ async def finalize_video_broadcast(context, msg_id, reason="manual"):
                 file_id = EXCLUDED.file_id, file_type = EXCLUDED.file_type,
                 file_name = EXCLUDED.file_name, button_text = EXCLUDED.button_text''',
                 next_num, data['file_id'], data['file_type'], data['file_name'], btn_text)
-        users = await conn.fetch('SELECT user_id FROM users')
     reply_markup = None
     if data['file_id']:
         btn_text = data.get('button_text') or get_file_button_info(data['file_name'], data['file_type'])
@@ -2061,13 +2102,10 @@ async def finalize_video_broadcast(context, msg_id, reason="manual"):
         try:
             await context.bot.edit_message_reply_markup(chat_id=data['chat_id'], message_id=msg_id, reply_markup=reply_markup)
         except Exception as e: logging.error(f"Edit post: {e}")
-    success, fail = 0, 0
-    for u in users:
-        if u['user_id'] == ADMIN_ID: continue
-        try:
-            await context.bot.copy_message(chat_id=u['user_id'], from_chat_id=data['chat_id'], message_id=msg_id, reply_markup=reply_markup)
-            success += 1; await asyncio.sleep(0.05)
-        except Exception: fail += 1
+    async def send_video_to_user(target):
+        await context.bot.copy_message(chat_id=target, from_chat_id=data['chat_id'],
+                                        message_id=msg_id, reply_markup=reply_markup)
+    success, fail = await broadcast_to_all_users(send_video_to_user)
     file_info = f"📎 `{data['file_name']}`" if data['file_id'] else "📎 Fayl yo'q"
     reason_text = "⏱️ 10 daqiqa o'tdi" if reason == "timeout" else "✅ /done"
     try:
@@ -2384,17 +2422,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             points = int(update.message.text)
             await add_score_all(points)
             msg = await update.message.reply_text(t['admin_points_wait'])
-            success, fail = 0, 0
-            if db_pool:
-                async with db_pool.acquire() as conn:
-                    users = await conn.fetch('SELECT user_id FROM users')
-                bcast = f"🎁 **Aksiya!** +{points} ball! 🎉"
-                for u in users:
-                    if u['user_id'] == ADMIN_ID: continue
-                    try:
-                        await context.bot.send_message(chat_id=u['user_id'], text=bcast, parse_mode='Markdown')
-                        success += 1; await asyncio.sleep(0.05)
-                    except Exception: fail += 1
+            bcast = f"🎁 **Aksiya!** +{points} ball! 🎉"
+            success, fail = await broadcast_to_all_users(
+                lambda target: context.bot.send_message(chat_id=target, text=bcast, parse_mode='Markdown'))
             await msg.edit_text(t['admin_points_done'].format(points=points, success=success, fail=fail), parse_mode='Markdown')
             context.user_data['state'] = None
         else:
@@ -2409,17 +2439,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             announcement = update.message.text
             await add_update_db("Yangilanish", announcement)
             msg = await update.message.reply_text(t['admin_update_wait'])
-            success, fail = 0, 0
-            if db_pool:
-                async with db_pool.acquire() as conn:
-                    users = await conn.fetch('SELECT user_id FROM users')
-                bcast = f"📣 **YANGILANISH!**\n\n{announcement}"
-                for u in users:
-                    if u['user_id'] == ADMIN_ID: continue
-                    try:
-                        await context.bot.send_message(chat_id=u['user_id'], text=bcast, parse_mode='Markdown')
-                        success += 1; await asyncio.sleep(0.05)
-                    except Exception: fail += 1
+            bcast = f"📣 **YANGILANISH!**\n\n{announcement}"
+            success, fail = await broadcast_to_all_users(
+                lambda target: context.bot.send_message(chat_id=target, text=bcast, parse_mode='Markdown'))
             await msg.edit_text(t['admin_update_done'].format(success=success, fail=fail), parse_mode='Markdown')
             context.user_data['state'] = None
         return
@@ -2433,10 +2455,19 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('state') == 'in_support':
         if update.message.text:
             display_name = " ".join(x for x in [user.first_name, user.last_name] if x) or "Noma'lum foydalanuvchi"
-            username = f"@{user.username}" if user.username else "username yo'q"
-            am = f"📩 Murojaat!\n\n👤 {display_name}\n🔗 {username}\n🆔 `{user.id}`\n\n💬 {update.message.text}"
+            safe_name = html_lib.escape(display_name)
+            safe_text = html_lib.escape(update.message.text)
+            profile_url = f"tg://user?id={user.id}"
+            clickable_id = f'<a href="{profile_url}">{user.id}</a>'
+            if user.username:
+                safe_username = html_lib.escape(user.username)
+                username_line = f'🔗 <a href="https://t.me/{safe_username}">@{safe_username}</a>'
+            else:
+                username_line = '🔗 username yo‘q — ID orqali profilga kirish mumkin'
+            am = f"📩 <b>Murojaat!</b>\n\n👤 <b>{safe_name}</b>\n{username_line}\n🆔 {clickable_id}\n\n💬 {safe_text}"
             try:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=am)
+                await context.bot.send_message(chat_id=ADMIN_ID, text=am, parse_mode='HTML',
+                    disable_web_page_preview=True)
                 await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang, user.id))
             except Exception: pass
             context.user_data['state'] = None
@@ -2444,7 +2475,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user.id == ADMIN_ID and update.message.reply_to_message:
         original = update.message.reply_to_message.text or ""
-        m = re.search(r'🆔 (\d+)', original)
+        m = re.search(r'tg://user\?id=(\d+)', original) or re.search(r'🆔\s+`?(\d+)', original)
         if m:
             target = int(m.group(1))
             try:
@@ -2454,16 +2485,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(TEXTS[context.user_data.get('lang', 'uz')]['admin_bcast_wait'])
-    if not db_pool: return
-    async with db_pool.acquire() as conn:
-        users = await conn.fetch('SELECT user_id FROM users')
-    success, fail = 0, 0
-    for u in users:
-        if u['user_id'] == ADMIN_ID: continue
-        try:
-            await context.bot.copy_message(chat_id=u['user_id'], from_chat_id=update.message.chat_id, message_id=update.message.message_id)
-            success += 1; await asyncio.sleep(0.05)
-        except Exception: fail += 1
+    success, fail = await broadcast_to_all_users(
+        lambda target: context.bot.copy_message(chat_id=target, from_chat_id=update.message.chat_id,
+                                                 message_id=update.message.message_id))
     context.user_data['state'] = None
     await msg.edit_text(f"✅ {success} | ❌ {fail}")
 
