@@ -74,6 +74,22 @@ async def edit_or_send(query, context, text, reply_markup):
             pass
         await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=reply_markup, parse_mode='Markdown')
 
+async def safe_edit_message(message, bot, text):
+    """Telegram 4096 belgilik limitini buzmasdan AI javobini chiqaradi."""
+    text = str(text or '')
+    if len(text) <= 4000:
+        await message.edit_text(text)
+        return
+    await message.edit_text(text[:4000] + "\n\n📄 Davomi keyingi xabarlarda...")
+    chat_id = message.chat_id
+    for start in range(4000, len(text), 3900):
+        await bot.send_message(chat_id=chat_id, text=text[start:start + 3900])
+
+async def send_long_message(bot, chat_id, text):
+    text = str(text or '')
+    for start in range(0, len(text), 3900):
+        await bot.send_message(chat_id=chat_id, text=text[start:start + 3900])
+
 def get_file_button_info(file_name, file_type):
     name = (file_name or "").lower()
     if name.endswith('.apk'): return "📥 APK YUKLAB OLISH"
@@ -1673,6 +1689,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text(t['ai_limit_reached'])
             return
         ai_reply = ""
+        provider_errors = []
         sys_prompt = """Siz Termux va dasturlash bo'yicha professional AI Dasturchisiz.
 Foydalanuvchi asosan o'zbek tilida yozadi: javobni har doim o'zbek tilida bering, inglizcha umumiy rad javoblari yozmang.
 Python, Lua, Java, JavaScript, C/C++, Bash, Termux, Linux va Telegram bot kodlarini tushuning.
@@ -1687,7 +1704,9 @@ Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xav
                 r = await gemini_client.aio.models.generate_content(model='gemini-1.5-flash',
                     contents=[types.Part.from_text(text=sys_prompt), types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')])
                 ai_reply = r.text
-            except Exception as e: logging.error(f"Gemini V: {e}")
+            except Exception as e:
+                provider_errors.append(f"Gemini Vision: {type(e).__name__}")
+                logging.exception("Gemini Vision xatosi")
 
         if not ai_reply and openrouter_client and not is_image:
             try:
@@ -1695,7 +1714,9 @@ Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xav
                     messages=[{"role":"system","content":sys_prompt},{"role":"user","content":user_query}], max_tokens=4000)
                     , timeout=180)
                 ai_reply = r.choices[0].message.content
-            except Exception as e: logging.error(f"OR: {e}")
+            except Exception as e:
+                provider_errors.append(f"OpenRouter: {type(e).__name__}")
+                logging.exception("OpenRouter xatosi")
 
         if not ai_reply and mistral_client and not is_image:
             try:
@@ -1703,7 +1724,9 @@ Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xav
                     messages=[{"role":"system","content":sys_prompt},{"role":"user","content":user_query}], max_tokens=4000)
                     , timeout=180)
                 ai_reply = r.choices[0].message.content
-            except Exception as e: logging.error(f"Mistral: {e}")
+            except Exception as e:
+                provider_errors.append(f"Mistral: {type(e).__name__}")
+                logging.exception("Mistral xatosi")
 
         if not ai_reply and groq_client and not is_image:
             try:
@@ -1711,16 +1734,22 @@ Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xav
                     messages=[{"role":"system","content":sys_prompt},{"role":"user","content":user_query}], max_tokens=4000)
                     , timeout=180)
                 ai_reply = r.choices[0].message.content
-            except Exception as e: logging.error(f"Groq: {e}")
+            except Exception as e:
+                provider_errors.append(f"Groq: {type(e).__name__}")
+                logging.exception("Groq xatosi")
 
         if not ai_reply and gemini_client and not is_image:
             try:
                 r = await gemini_client.aio.models.generate_content(model='gemini-1.5-flash', contents=f"{sys_prompt}\n\n{user_query}")
                 ai_reply = r.text
-            except Exception as e: logging.error(f"Gemini: {e}")
+            except Exception as e:
+                provider_errors.append(f"Gemini: {type(e).__name__}")
+                logging.exception("Gemini xatosi")
 
         if not ai_reply:
-            await msg.edit_text(t['ai_error'].format(error="AI limit")); return
+            details = ", ".join(provider_errors) if provider_errors else "API kalitlari topilmadi"
+            await msg.edit_text(f"❌ AI javob bermadi.\n\nSabab: {details}\n\nAPI kalitlarini va model nomlarini tekshiring.")
+            return
 
         code_match = re.search(r'```(?:python|py|lua|javascript|js|cpp|c|java)?\s*(.*?)```', ai_reply, re.DOTALL | re.IGNORECASE)
         if code_match:
@@ -1737,14 +1766,14 @@ Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xav
             cf = BytesIO(code_text.encode('utf-8')); cf.name = fn
             await context.bot.send_document(chat_id=update.message.chat_id, document=cf, caption=f"🤖 {ln}: {fn}")
             expl = ai_reply.replace(code_match.group(0), "").strip()
-            if expl: await context.bot.send_message(chat_id=update.message.chat_id, text=f"📝 {expl}")
+            if expl: await send_long_message(context.bot, update.message.chat_id, f"📝 {expl}")
             await msg.delete()
         else:
-            await msg.edit_text(t['ai_no_code'].format(text=ai_reply))
+            await safe_edit_message(msg, context.bot, t['ai_no_code'].format(text=ai_reply))
     except Exception as e:
         logging.exception("AI handler xatosi")
         try:
-            await msg.edit_text("❌ AI vaqtincha javob bera olmadi. So'rovni qayta yuboring; yuborgan kodingiz konteksti saqlangan.")
+            await msg.edit_text(f"❌ AI ishlov berishda xato berdi: {type(e).__name__}.\n\nKod konteksti saqlandi. API kalitlari/model sozlamalarini tekshirib, qayta yuboring.")
         except Exception:
             pass
 
