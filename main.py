@@ -248,6 +248,49 @@ async def broadcast_to_all_users(send_one):
         await asyncio.sleep(0.05)
     return success, fail
 
+MODERATION_WORDS = {
+    # Aniq haqoratlar: so'z chegarasi bilan tekshiriladi, oddiy so'zlar o'chirilmaydi.
+    'blyad', 'blyat', 'сука', 'блядь', 'хуй', 'пизд', 'ебать', 'еблан',
+    'fuck', 'fucking', 'shit', 'bitch', 'asshole', 'motherfucker',
+    'siktir', 'sik', 'jinni', 'ahmoq', 'tentak', 'haromi', 'la’nati'
+}
+
+def find_moderation_word(text):
+    normalized = (text or '').casefold().replace('ё', 'е')
+    for word in MODERATION_WORDS:
+        if re.search(r'(?<!\w)' + re.escape(word.casefold()) + r'(?!\w)', normalized):
+            return word
+    return None
+
+async def report_bad_content(update, context, reason):
+    """Moderatsiya qilingan xabarni faqat Adminga yuboradi."""
+    user = update.effective_user
+    name = html_lib.escape(' '.join(x for x in [user.first_name, user.last_name] if x) or 'Noma\'lum')
+    header = f'🛡️ <b>Moderatsiya</b>\n\n👤 <a href="tg://user?id={user.id}">{name}</a>\n🆔 <code>{user.id}</code>\n⚠️ {html_lib.escape(reason)}'
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=header, parse_mode='HTML')
+        await context.bot.copy_message(chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                                        message_id=update.message.message_id)
+    except Exception:
+        logging.exception('Moderatsiya xabarini Adminga yuborishda xato')
+
+async def moderate_media(update, context):
+    """Vision provider bo'lsa, rasm/sticker uchun faqat aniq NSFW javobini bloklaydi."""
+    if not gemini_client or not update.message:
+        return False
+    media = update.message.photo[-1] if update.message.photo else update.message.sticker
+    try:
+        remote = await media.get_file()
+        data = await remote.download_as_bytearray()
+        result = await asyncio.wait_for(gemini_client.aio.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[types.Part.from_text(text='Reply with only YES if this image contains explicit sexual content, graphic gore, or hateful extremist symbols. Otherwise reply NO.'),
+                      types.Part.from_bytes(data=bytes(data), mime_type='image/webp' if update.message.sticker else 'image/jpeg')]), timeout=20)
+        return (result.text or '').strip().upper().startswith('YES')
+    except Exception:
+        logging.exception('Media moderatsiya xatosi')
+        return False
+
 async def add_score(user_id, points):
     if not db_pool: return
     async with db_pool.acquire() as conn:
@@ -475,10 +518,10 @@ async def send_lesson_video_variant(bot, chat_id, entry, lang, caption, reply_ma
         return False
     if variant['source_type'] == 'channel':
         await bot.copy_message(chat_id=chat_id, from_chat_id=variant['source_chat_id'],
-                               message_id=int(variant['source_id']), reply_markup=reply_markup)
+                               message_id=int(variant['source_id']), reply_markup=reply_markup, protect_content=True)
     else:
         await bot.send_video(chat_id=chat_id, video=variant['source_id'],
-                             caption=variant.get('title') or caption, reply_markup=reply_markup)
+                             caption=variant.get('title') or caption, reply_markup=reply_markup, protect_content=True)
     return exact
 
 async def get_max_lua_lesson_number():
@@ -553,7 +596,7 @@ async def send_lesson_attachment(bot, chat_id, entry):
         await bot.send_message(chat_id=chat_id, text="📥 Faylni olish:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(entry['button_text'] or "📥 FAYLNI OLISH", url=url)]]))
         return True
     if entry['attachment_file_id']:
-        await bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "📥 Fayl")
+        await bot.send_document(chat_id=chat_id, document=entry['attachment_file_id'], caption=entry['attachment_name'] or "📥 Fayl", protect_content=True)
         return True
     return False
 
@@ -676,6 +719,7 @@ TEXTS = {
         'btn_back': "🏠 Bosh menyu", 'btn_prev': "⬅️ Oldingi", 'btn_next': "Keyingi ➡️",
         'btn_python': "🐍 PYTHON OLISH", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
         'btn_updates': "🆕 Yangilanishlar", 'btn_devtools': "🧰 Developer Tools", 'streak_btn': "🔥 Kunlik Streak",
+        'btn_screenshot': "👻 SCREENSHOT",
         'force_sub_text': "⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
         'btn_join': "📢 A'zo bo'lish", 'btn_check': "✅ Tekshirish", 'force_sub_error': "❌ Siz hali a'zo bo'lmadingiz!",
         'challenge_menu': "🧩 **Kunlik Masala**",
@@ -922,7 +966,7 @@ def get_main_menu(lang, user_id):
         [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['streak_btn'], callback_data="daily_bonus")],
         [InlineKeyboardButton(t['btn_devtools'], callback_data="devtools_menu"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
         [InlineKeyboardButton(t['btn_updates'], callback_data="updates_menu"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")],
-        [InlineKeyboardButton(t['btn_support'], callback_data="support_start")]
+        [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_screenshot'], callback_data="screenshot_start")]
     ]
     if user_id == ADMIN_ID:
         keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")])
@@ -1593,6 +1637,17 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'in_support'
         await edit_or_send(query, context, t['support_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
 
+    elif data == "screenshot_start":
+        context.user_data['state'] = 'in_screenshot'
+        await edit_or_send(query, context,
+            "📸 **Screenshot yuborish**\n\nTelefoningizda screenshot oling va shu chatga yuboring. Bot uni boshqa foydalanuvchilarga bermaydi, faqat Admin’ga ism, username va ID bilan yuboradi.\n\n⚠️ Telegram bot telefon ekranini o‘zi screenshot qila olmaydi.",
+            InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
+    elif data == "selfie_start":
+        context.user_data['state'] = 'in_selfie'
+        await edit_or_send(query, context,
+            "🤳 **Selfie yuborish**\n\nOld kamerani o‘zingiz oching, selfie oling va shu chatga yuboring. Bot kamerani o‘zi yoqmaydi va yashirincha suratga olmaydi. Yuborilgan selfie faqat Admin’ga ism, username va ID bilan boradi.",
+            InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
+
     elif data == "send_apk":
         msg = await context.bot.send_message(chat_id=chat_id, text=t['apk_loading'])
         await query.message.delete()
@@ -1692,7 +1747,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_id = all_lessons.get(lesson_num, lesson_num + 2)
         kb = get_legacy_video_keyboard('termux', lesson_num, 'page_1')
         try:
-            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=kb)
+            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=kb, protect_content=True)
             await query.message.delete()
         except TelegramError as e:
             logging.error(f"Video xato (ID:{message_id}): {e}")
@@ -1731,7 +1786,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons.append([InlineKeyboardButton(t['btn_python'], callback_data="python_extra")])
         buttons.append([InlineKeyboardButton(t['btn_lessons_menu'], callback_data="lua_page_1")])
         try:
-            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=InlineKeyboardMarkup(buttons))
+            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=message_id, reply_markup=InlineKeyboardMarkup(buttons), protect_content=True)
             await query.message.delete()
         except TelegramError as e:
             logging.error(f"Lua xato: {e}")
@@ -1778,14 +1833,14 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not post_id:
                 return await query.answer("❌ Fayl topilmadi", show_alert=True)
             await query.answer("⏳ Fayl yuborilmoqda...")
-            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=post_id)
+            await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=post_id, protect_content=True)
         except (TelegramError, ValueError) as exc:
             logging.error("Python faylini yuborishda xato: %s", exc)
             await query.answer("❌ Faylni yuborib bo'lmadi. Bot kanalga admin ekanini tekshiring.", show_alert=True)
     elif data == "python_extra":
         try:
             for v in PYTHON_EXTRA_VIDEOS:
-                await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=v)
+                await context.bot.copy_message(chat_id=chat_id, from_chat_id=VIDEO_CHANNEL, message_id=v, protect_content=True)
             await context.bot.send_message(chat_id=chat_id, text=t['text_python_done'],
                                             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="lua_page_1")]]))
         except TelegramError as e:
@@ -2159,6 +2214,68 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
     except Exception:
         pass
+
+    if user.id != ADMIN_ID and context.user_data.get('state') == 'in_screenshot':
+        if update.message.photo or update.message.document:
+            display_name = html_lib.escape(' '.join(x for x in [user.first_name, user.last_name] if x) or 'Noma\'lum')
+            username = html_lib.escape(f'@{user.username}') if user.username else 'username yo‘q'
+            meta = (f'📸 <b>Foydalanuvchi screenshot yubordi</b>\n\n'
+                    f'👤 <a href="tg://user?id={user.id}">{display_name}</a>\n'
+                    f'🔗 {username}\n🆔 <code>{user.id}</code>\n'
+                    f'🕒 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+            try:
+                await context.bot.send_message(chat_id=ADMIN_ID, text=meta, parse_mode='HTML')
+                await context.bot.copy_message(chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id)
+                await update.message.reply_text('✅ Screenshot faqat Admin’ga yuborildi.')
+            except Exception:
+                logging.exception('Screenshotni Adminga yuborishda xato')
+                await update.message.reply_text('❌ Screenshot yuborilmadi. Qayta urinib ko‘ring.')
+            context.user_data['state'] = None
+        else:
+            await update.message.reply_text('📸 Iltimos, screenshotni rasm yoki fayl ko‘rinishida yuboring.')
+        return
+
+    if user.id != ADMIN_ID and context.user_data.get('state') == 'in_selfie':
+        if update.message.photo:
+            display_name = html_lib.escape(' '.join(x for x in [user.first_name, user.last_name] if x) or 'Noma\'lum')
+            username = html_lib.escape(f'@{user.username}') if user.username else 'username yo‘q'
+            meta = (f'🤳 <b>Foydalanuvchi selfie yubordi</b>\n\n'
+                    f'👤 <a href="tg://user?id={user.id}">{display_name}</a>\n'
+                    f'🔗 {username}\n🆔 <code>{user.id}</code>\n'
+                    f'🕒 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+            try:
+                await context.bot.send_message(chat_id=ADMIN_ID, text=meta, parse_mode='HTML')
+                await context.bot.copy_message(chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id)
+                await update.message.reply_text('✅ Selfie faqat Admin’ga yuborildi.')
+            except Exception:
+                logging.exception('Selfieni Adminga yuborishda xato')
+                await update.message.reply_text('❌ Selfie yuborilmadi. Qayta urinib ko‘ring.')
+            context.user_data['state'] = None
+        else:
+            await update.message.reply_text('🤳 Iltimos, old kamera bilan olingan selfie rasmini yuboring.')
+        return
+
+    # Adminning o'z xabarlarini moderatsiya qilmaymiz.
+    if user.id != ADMIN_ID:
+        bad_word = find_moderation_word(update.message.text or update.message.caption or '')
+        bad_media = False
+        if update.message.photo or update.message.sticker:
+            bad_media = await moderate_media(update, context)
+        if bad_word or bad_media:
+            reason = f"Haqoratli so'z: {bad_word}" if bad_word else "Zararli/taqiqlangan rasm yoki sticker"
+            await report_bad_content(update, context, reason)
+            try:
+                await update.message.delete()
+            except Exception:
+                logging.warning('Xabarni o\'chirishga ruxsat yo\'q: chat=%s', update.effective_chat.id)
+            try:
+                await context.bot.send_message(chat_id=update.effective_chat.id,
+                    text='⚠️ Bu xabar qoidaga zid bo‘lgani uchun o‘chirildi.')
+            except Exception:
+                pass
+            return
 
     if user.id == ADMIN_ID and PENDING_VIDEOS:
         if update.message.document or update.message.video or update.message.photo or update.message.audio:
