@@ -201,6 +201,18 @@ async def add_user(user_id, lang='uz'):
         await conn.execute('''INSERT INTO users (user_id, lang) VALUES ($1, $2)
             ON CONFLICT (user_id) DO UPDATE SET lang = EXCLUDED.lang''', user_id, lang)
 
+async def get_user_lang(user_id):
+    """Foydalanuvchining oxirgi tanlagan tilini qaytaradi."""
+    if not db_pool:
+        return 'uz'
+    try:
+        async with db_pool.acquire() as conn:
+            value = await conn.fetchval('SELECT lang FROM users WHERE user_id = $1', user_id)
+        return value if value in {'uz', 'ru', 'en', 'ar'} else None
+    except Exception:
+        logging.exception('Foydalanuvchi tilini o\'qishda xato')
+        return 'uz'
+
 async def add_score(user_id, points):
     if not db_pool: return
     async with db_pool.acquire() as conn:
@@ -661,7 +673,52 @@ TEXTS = {
 
 for other_lang in ['ru', 'en', 'ar']:
     TEXTS[other_lang] = {k: v for k, v in TEXTS['uz'].items()}
-    TEXTS[other_lang]['choose_lang'] = "🌐 Select language" if other_lang == 'en' else ("🌐 Выберите язык" if other_lang == 'ru' else "🌐 اختر اللغة")
+
+TEXTS['ru'].update({
+    'choose_lang': '👋 **Здравствуйте!**\n\nВыберите удобный язык:',
+    'welcome': '🏠 **TERMUX TUTORIAL**\n\n💻 Помощник по Termux, Python, Lua, Java и программированию.\n\n👇 Выберите раздел:',
+    'btn_termux': '📽️ УРОКИ TERMUX', 'btn_lua': '📽️ УРОКИ LUA PAK', 'btn_java': '☕ ПРОГРАММИРОВАНИЕ JAVA',
+    'btn_apk': '📥 СКАЧАТЬ APK', 'btn_arch': '📱 32/64-бит', 'btn_ai': '🤖 AI ПРОГРАММИСТ',
+    'btn_profile': '👤 Мой профиль', 'btn_top': '🏆 Топ 10', 'btn_quiz': '🧠 Тест (баллы)',
+    'btn_security': '🛡️ Кибербезопасность', 'btn_support': '✉️ Администратор', 'btn_tip': '💡 Совет',
+    'btn_cheatsheet': '📜 Команды', 'btn_change_lang': '🌐 Язык', 'btn_scripts': '📦 Создать скрипт',
+    'btn_files': '🗂 Файлы', 'btn_premium': '💎 Premium', 'btn_challenge': '🧩 Задача дня',
+    'btn_theme': '🎨 Тема Termux', 'btn_back': '🏠 Главное меню', 'btn_prev': '⬅️ Назад', 'btn_next': 'Далее ➡️',
+    'btn_updates': '🆕 Обновления', 'btn_devtools': '🧰 Инструменты разработчика', 'streak_btn': '🔥 Серия дней',
+    'ai_prompt': '🤖 **AI Программист**\n\nОтправьте задание или файл с кодом.',
+    'files_menu': '🗂 **Центр файлов**\n\nВыберите папку:', 'script_cat_menu': '📦 **Создатель скриптов**\n\nВыберите раздел:',
+    'theme_menu': '🎨 **Тема терминала Termux**\n\nВыберите цветовую схему:', 'cheatsheet_menu': '📜 **Команды**\n\nВыберите раздел:',
+})
+TEXTS['en'].update({
+    'choose_lang': '👋 **Hello!**\n\nChoose your language:',
+    'welcome': '🏠 **TERMUX TUTORIAL**\n\n💻 Your assistant for Termux, Python, Lua, Java and programming.\n\n👇 Choose a section:',
+    'btn_termux': '📽️ TERMUX LESSONS', 'btn_lua': '📽️ LUA PAK LESSONS', 'btn_java': '☕ JAVA PROGRAMMING',
+    'btn_apk': '📥 DOWNLOAD APK', 'btn_arch': '📱 32/64-bit', 'btn_ai': '🤖 AI DEVELOPER',
+    'btn_profile': '👤 My profile', 'btn_top': '🏆 Top 10', 'btn_quiz': '🧠 Quiz (points)',
+    'btn_security': '🛡️ Cybersecurity', 'btn_support': '✉️ Contact admin', 'btn_tip': '💡 Tip',
+    'btn_cheatsheet': '📜 Commands', 'btn_change_lang': '🌐 Language', 'btn_scripts': '📦 Script builder',
+    'btn_files': '🗂 Files', 'btn_premium': '💎 Premium', 'btn_challenge': '🧩 Daily challenge',
+    'btn_theme': '🎨 Termux theme', 'btn_back': '🏠 Main menu', 'btn_prev': '⬅️ Previous', 'btn_next': 'Next ➡️',
+    'btn_updates': '🆕 Updates', 'btn_devtools': '🧰 Developer tools', 'streak_btn': '🔥 Daily streak',
+    'ai_prompt': '🤖 **AI Developer**\n\nSend a task or a code file.',
+    'files_menu': '🗂 **File Center**\n\nChoose a folder:', 'script_cat_menu': '📦 **Script Builder**\n\nChoose a section:',
+    'theme_menu': '🎨 **Termux Terminal Theme**\n\nChoose a color scheme:', 'cheatsheet_menu': '📜 **Commands**\n\nChoose a section:',
+})
+TEXTS['ar'].update({
+    'choose_lang': '👋 **مرحباً!**\n\nاختر لغتك:',
+    'welcome': '🏠 **TERMUX TUTORIAL**\n\n💻 مساعدك في Termux وPython وLua وJava والبرمجة.\n\n👇 اختر القسم:',
+    'btn_termux': '📽️ دروس TERMUX', 'btn_lua': '📽️ دروس LUA PAK', 'btn_java': '☕ برمجة JAVA',
+    'btn_apk': '📥 تحميل APK', 'btn_arch': '📱 32/64 بت', 'btn_ai': '🤖 المبرمج AI',
+    'btn_profile': '👤 ملفي', 'btn_top': '🏆 أفضل 10', 'btn_quiz': '🧠 اختبار (نقاط)',
+    'btn_security': '🛡️ الأمن السيبراني', 'btn_support': '✉️ المشرف', 'btn_tip': '💡 نصيحة',
+    'btn_cheatsheet': '📜 الأوامر', 'btn_change_lang': '🌐 اللغة', 'btn_scripts': '📦 إنشاء سكربت',
+    'btn_files': '🗂 الملفات', 'btn_premium': '💎 Premium', 'btn_challenge': '🧩 مسألة اليوم',
+    'btn_theme': '🎨 سمة Termux', 'btn_back': '🏠 القائمة الرئيسية', 'btn_prev': '⬅️ السابق', 'btn_next': 'التالي ➡️',
+    'btn_updates': '🆕 التحديثات', 'btn_devtools': '🧰 أدوات المطور', 'streak_btn': '🔥 سلسلة يومية',
+    'ai_prompt': '🤖 **المبرمج AI**\n\nأرسل مهمة أو ملف كود.',
+    'files_menu': '🗂 **مركز الملفات**\n\nاختر مجلداً:', 'script_cat_menu': '📦 **منشئ السكربتات**\n\nاختر قسماً:',
+    'theme_menu': '🎨 **سمة طرفية Termux**\n\nاختر نظام الألوان:', 'cheatsheet_menu': '📜 **الأوامر**\n\nاختر قسماً:',
+})
 
 TIPS = [
     {'uz': "**Xavfsiz yangilash:**\n`pkg update && pkg upgrade` ni vaqti-vaqti bilan bajaring.", 'ru': "**Обновление:**\nПериодически запускайте `pkg update && pkg upgrade`.", 'en': "**Update safely:**\nRun `pkg update && pkg upgrade` regularly.", 'ar': "**تحديث آمن:**\nشغّل `pkg update && pkg upgrade` دورياً."},
@@ -931,13 +988,18 @@ def get_admin_delcat_keyboard(lang, categories):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     context.user_data.clear()
-    lang = 'uz'
+    saved_lang = await get_user_lang(user_id)
+    lang = saved_lang or 'uz'
     t = TEXTS[lang]
     if not await is_subscribed(user_id, context):
         await update.message.reply_text(t['force_sub_text'], reply_markup=get_sub_keyboard(lang), parse_mode='Markdown')
         return
+    if not saved_lang:
+        await add_user(user_id, 'uz')
+        await update.message.reply_text(t['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+        return
     await add_user(user_id, lang)
-    await update.message.reply_text(TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+    await update.message.reply_text(t['welcome'], reply_markup=get_main_menu(lang, user_id), parse_mode='Markdown')
 
 # ==========================================
 # CALLBACK HANDLER
@@ -947,7 +1009,8 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = query.message.chat_id
     user_id = query.from_user.id
-    lang = context.user_data.get('lang', 'uz')
+    lang = context.user_data.get('lang') or await get_user_lang(user_id) or 'uz'
+    context.user_data['lang'] = lang
     t = TEXTS[lang]
     # Telegram tugma ichida GIF/sticker ko'rsatmaydi; barcha amallarda uning
     # o'rniga rasmiy typing indikatoridan foydalanamiz. Bu menyuni buzmaydi.
@@ -963,7 +1026,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("✅")
             await query.message.delete()
             await add_user(user_id, lang)
-            await context.bot.send_message(chat_id=chat_id, text=TEXTS['uz']['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
+            await context.bot.send_message(chat_id=chat_id, text=TEXTS[lang]['choose_lang'], reply_markup=get_lang_keyboard(), parse_mode='Markdown')
         else:
             await query.answer(t['force_sub_error'], show_alert=True)
         return
@@ -1302,12 +1365,13 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("lang_"):
         lang = data.split("_")[1]
+        if lang not in TEXTS:
+            lang = 'uz'
         context.user_data['lang'] = lang
         await add_user(user_id, lang)
         await edit_or_send(query, context, TEXTS[lang]['welcome'], get_main_menu(lang, user_id))
     elif data == "change_lang":
-        context.user_data.pop('lang', None)
-        await edit_or_send(query, context, TEXTS['uz']['choose_lang'], get_lang_keyboard())
+        await edit_or_send(query, context, TEXTS[lang]['choose_lang'], get_lang_keyboard())
     elif data == "updates_menu":
         updates = await get_recent_updates(5)
         if not updates:
@@ -1924,7 +1988,8 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    lang = context.user_data.get('lang', 'uz')
+    lang = context.user_data.get('lang') or await get_user_lang(user.id) or 'uz'
+    context.user_data['lang'] = lang
     t = TEXTS[lang]
     try:
         action = 'upload_document' if update.message.document else 'typing'
