@@ -177,9 +177,11 @@ async def init_db():
                 attachment_file_id VARCHAR(255), attachment_type VARCHAR(20),
                 attachment_name VARCHAR(255), attachment_url TEXT,
                 button_text VARCHAR(100) DEFAULT '🐍 PYTHON OLISH',
-                title VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                title VARCHAR(255), video_variants JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(track, lesson_number)
             )''')
+            await conn.execute("ALTER TABLE lesson_entries ADD COLUMN IF NOT EXISTS video_variants JSONB NOT NULL DEFAULT '{}'::jsonb")
             # Bo'sh Lua tugmalari va olib tashlangan Termux 48 yozuvi qayta chiqmasin.
             await conn.execute("DELETE FROM lesson_entries WHERE track = 'lua' AND lesson_number BETWEEN 10 AND 50")
             await conn.execute("DELETE FROM lesson_entries WHERE track = 'termux' AND lesson_number = 48")
@@ -393,6 +395,42 @@ async def get_lesson_entry_by_id(entry_id):
     async with db_pool.acquire() as conn:
         return await conn.fetchrow('SELECT * FROM lesson_entries WHERE id = $1', entry_id)
 
+def get_video_variant(entry, lang):
+    """Tanlangan til videosi; mavjud bo‘lmasa UZ/base fallback."""
+    variants = entry['video_variants'] or {}
+    if isinstance(variants, str):
+        try: variants = json_lib.loads(variants)
+        except Exception: variants = {}
+    selected = variants.get(lang) or variants.get('uz')
+    if selected:
+        return selected, lang in variants
+    return {'source_type': entry['source_type'], 'source_id': entry['source_id'],
+            'source_chat_id': entry['source_chat_id'], 'title': entry['title']}, False
+
+def get_lesson_video_keyboard(entry, track, lesson_number, back_callback):
+    variants = entry['video_variants'] or {}
+    available = set(variants.keys()) if isinstance(variants, dict) else set()
+    labels = [('uz', '🇺🇿 O‘zbekcha'), ('ru', '🇷🇺 Русский'), ('en', '🇬🇧 English')]
+    rows = [[InlineKeyboardButton(label + (' ✅' if code in available else ''),
+                                  callback_data=f'lesson_video_{track}_{lesson_number}_{code}')
+             for code, label in labels]]
+    attachment = entry['attachment_url'] or entry['attachment_file_id']
+    if attachment:
+        label = entry['button_text'] or get_file_button_info(entry['attachment_name'], entry['attachment_type'] or 'document')
+        rows.append([InlineKeyboardButton(label, callback_data=f"lesson_attach_{entry['id']}")])
+    rows.append([InlineKeyboardButton('📚 Darsliklar', callback_data=back_callback)])
+    return InlineKeyboardMarkup(rows)
+
+async def send_lesson_video_variant(bot, chat_id, entry, lang, caption, reply_markup):
+    variant, exact = get_video_variant(entry, lang)
+    if variant['source_type'] == 'channel':
+        await bot.copy_message(chat_id=chat_id, from_chat_id=variant['source_chat_id'],
+                               message_id=int(variant['source_id']), reply_markup=reply_markup)
+    else:
+        await bot.send_video(chat_id=chat_id, video=variant['source_id'],
+                             caption=variant.get('title') or caption, reply_markup=reply_markup)
+    return exact
+
 async def get_max_lua_lesson_number():
     max_num = max(LUA_LESSONS.keys())
     if db_pool:
@@ -412,6 +450,30 @@ async def save_lesson_entry(track, lesson_number, source_type, source_id, source
             source_type=EXCLUDED.source_type, source_id=EXCLUDED.source_id,
             source_chat_id=EXCLUDED.source_chat_id, title=EXCLUDED.title''',
             track, lesson_number, source_type, str(source_id), source_chat_id, title)
+    return True
+
+async def save_lesson_variant(track, lesson_number, lang, source_type, source_id, source_chat_id=None, title=None):
+    """Bitta darslikning UZ/RU/EN video variantini saqlaydi."""
+    if lang not in {'uz', 'ru', 'en'} or not db_pool:
+        return False
+    variant = {'source_type': source_type, 'source_id': str(source_id),
+               'source_chat_id': source_chat_id, 'title': title}
+    payload = json_lib.dumps({lang: variant}, ensure_ascii=False)
+    async with db_pool.acquire() as conn:
+        exists = await conn.fetchval('SELECT id FROM lesson_entries WHERE track=$1 AND lesson_number=$2', track, lesson_number)
+        if not exists:
+            await conn.execute('''INSERT INTO lesson_entries
+                (track, lesson_number, source_type, source_id, source_chat_id, title, video_variants)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)''',
+                track, lesson_number, source_type, str(source_id), source_chat_id, title, payload)
+        elif lang == 'uz':
+            await conn.execute('''UPDATE lesson_entries SET source_type=$1, source_id=$2,
+                source_chat_id=$3, title=$4, video_variants=COALESCE(video_variants, '{}'::jsonb) || $5::jsonb
+                WHERE track=$6 AND lesson_number=$7''', source_type, str(source_id), source_chat_id, title,
+                payload, track, lesson_number)
+        else:
+            await conn.execute('''UPDATE lesson_entries SET video_variants=COALESCE(video_variants, '{}'::jsonb) || $1::jsonb
+                WHERE track=$2 AND lesson_number=$3''', payload, track, lesson_number)
     return True
 
 async def save_lesson_attachment(track, lesson_number, file_id=None, file_type=None,
@@ -1135,9 +1197,24 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data in ("admin_lesson_track_termux", "admin_lesson_track_lua"):
         if user_id != ADMIN_ID: return
-        context.user_data['lesson_track'] = data.rsplit('_', 1)[-1]
+        track = data.rsplit('_', 1)[-1]
+        context.user_data['lesson_track'] = track
+        context.user_data['state'] = 'in_lesson_video_lang'
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton('🇺🇿 O‘zbekcha video', callback_data=f'admin_lesson_lang_{track}_uz')],
+            [InlineKeyboardButton('🇷🇺 Русский видео', callback_data=f'admin_lesson_lang_{track}_ru')],
+            [InlineKeyboardButton('🇬🇧 English video', callback_data=f'admin_lesson_lang_{track}_en')],
+            [InlineKeyboardButton(t['btn_back'], callback_data='admin_lesson_add')]
+        ])
+        await edit_or_send(query, context, '🌐 **Video tilini tanlang**\n\nQaysi tildagi videoni qo‘shmoqchisiz?', kb)
+    elif data.startswith('admin_lesson_lang_'):
+        if user_id != ADMIN_ID: return
+        _, _, _, track, video_lang = data.split('_')
+        context.user_data['lesson_track'] = track
+        context.user_data['lesson_video_lang'] = video_lang
         context.user_data['state'] = 'in_lesson_number'
-        await edit_or_send(query, context, "🔢 Darslik raqamini yuboring (1-999):", InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_lesson_add")]]))
+        await edit_or_send(query, context, f'🔢 **{video_lang.upper()} video** uchun darslik raqamini yuboring (1-999):',
+                           InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data=f'admin_lesson_track_{track}')]]))
 
     elif data.startswith("admin_file_cat_"):
         if user_id != ADMIN_ID: return
@@ -1510,16 +1587,32 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = t['text_page'].format(page=page, total=total_pages)
         await edit_or_send(query, context, text, get_lessons_keyboard(page, lang, max_l))
 
+    elif data.startswith("lesson_video_"):
+        _, _, track, number, video_lang = data.split('_', 4)
+        lesson_num = int(number)
+        entry = await get_lesson_entry(track, lesson_num)
+        if not entry:
+            return await query.answer("❌ Video topilmadi", show_alert=True)
+        try:
+            kb = get_lesson_video_keyboard(entry, track, lesson_num, 'page_1' if track == 'termux' else 'lua_page_1')
+            exact = await send_lesson_video_variant(context.bot, chat_id, entry, video_lang,
+                f"📚 {lesson_num}-darslik", kb)
+            if not exact:
+                await context.bot.send_message(chat_id=chat_id, text="ℹ️ Bu tilda video hali qo‘shilmagan; mavjud video yuborildi.")
+            await query.message.delete()
+        except Exception as exc:
+            logging.exception('Til video yuborish xatosi: %s', exc)
+            await query.answer('❌ Bu til videosi hozircha mavjud emas', show_alert=True)
+        return
+
     elif data.startswith("lesson_"):
         lesson_num = int(data.split("_")[1])
         entry = await get_lesson_entry('termux', lesson_num)
         if entry:
             try:
-                lesson_kb = get_lesson_attachment_keyboard(entry, "page_1")
-                if entry['source_type'] == 'channel':
-                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']), reply_markup=lesson_kb)
-                else:
-                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 {lesson_num}-darslik", reply_markup=lesson_kb)
+                lesson_kb = get_lesson_video_keyboard(entry, 'termux', lesson_num, 'page_1')
+                await send_lesson_video_variant(context.bot, chat_id, entry, lang,
+                    f"📚 {lesson_num}-darslik", lesson_kb)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Termux darslik xatosi: %s", exc)
@@ -1543,11 +1636,9 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry = await get_lesson_entry('lua', lesson_num)
         if entry:
             try:
-                lesson_kb = get_lesson_attachment_keyboard(entry, "lua_page_1")
-                if entry['source_type'] == 'channel':
-                    await context.bot.copy_message(chat_id=chat_id, from_chat_id=entry['source_chat_id'], message_id=int(entry['source_id']), reply_markup=lesson_kb)
-                else:
-                    await context.bot.send_video(chat_id=chat_id, video=entry['source_id'], caption=entry['title'] or f"📚 Lua {lesson_num}-darslik", reply_markup=lesson_kb)
+                lesson_kb = get_lesson_video_keyboard(entry, 'lua', lesson_num, 'lua_page_1')
+                await send_lesson_video_variant(context.bot, chat_id, entry, lang,
+                    f"📚 Lua {lesson_num}-darslik", lesson_kb)
                 await query.message.delete()
             except Exception as exc:
                 logging.error("Lua darslik xatosi: %s", exc)
@@ -2056,6 +2147,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         track = context.user_data.get('lesson_track')
         number = context.user_data.get('lesson_number')
+        video_lang = context.user_data.get('lesson_video_lang', 'uz')
         if update.message.text:
             match = re.match(r'^https?://t\.me/([^/]+)/([0-9]+)', update.message.text.strip())
             if not match:
@@ -2063,9 +2155,13 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             try:
                 source_chat = await context.bot.get_chat('@' + match.group(1).lstrip('@'))
-                await save_lesson_entry(track, number, 'channel', match.group(2), source_chat.id)
-                context.user_data['state'] = 'in_lesson_attachment'
-                await update.message.reply_text("✅ Video linki saqlandi.\n\nPython fayli/linkini yuboring yoki /skip yozing.")
+                await save_lesson_variant(track, number, video_lang, 'channel', match.group(2), source_chat.id)
+                if video_lang == 'uz':
+                    context.user_data['state'] = 'in_lesson_attachment'
+                    await update.message.reply_text("✅ O‘zbekcha video linki saqlandi.\n\nPython fayli/linkini yuboring yoki /skip yozing.")
+                else:
+                    context.user_data['state'] = None
+                    await update.message.reply_text(f"✅ {video_lang.upper()} video linki saqlandi.")
             except Exception:
                 await update.message.reply_text("❌ Kanal topilmadi yoki bot kanal postini ko'ra olmaydi.")
             return
@@ -2078,9 +2174,13 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             source_type, source_id, source_chat_id = 'channel', origin.message_id, origin.chat.id
         elif getattr(update.message, 'forward_from_chat', None) and getattr(update.message, 'forward_from_message_id', None):
             source_type, source_id, source_chat_id = 'channel', update.message.forward_from_message_id, update.message.forward_from_chat.id
-        await save_lesson_entry(track, number, source_type, source_id, source_chat_id, update.message.caption)
-        context.user_data['state'] = 'in_lesson_attachment'
-        await update.message.reply_text("✅ Video saqlandi.\n\n🐍 Python tugmasi kerakmi? Python faylini yuboring yoki link (https://...) jo'nating. Kerak emas bo'lsa /skip yozing.")
+        await save_lesson_variant(track, number, video_lang, source_type, source_id, source_chat_id, update.message.caption)
+        if video_lang == 'uz':
+            context.user_data['state'] = 'in_lesson_attachment'
+            await update.message.reply_text("✅ O‘zbekcha video saqlandi.\n\n🐍 Python tugmasi kerakmi? Python faylini yuboring yoki link (https://...) jo‘nating. Kerak emas bo‘lsa /skip yozing.")
+        else:
+            context.user_data['state'] = None
+            await update.message.reply_text(f"✅ {video_lang.upper()} video saqlandi.")
         return
 
     if user.id == ADMIN_ID and context.user_data.get('state') == 'in_lesson_attachment':
