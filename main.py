@@ -541,7 +541,7 @@ SCRIPTS_DATA = {
 TEXTS = {
     'uz': {
         'choose_lang': "👋 **Assalomu alaykum!**\n\nIltimos, o'zingizga qulay tilni tanlang:",
-        'welcome': "👋 **Assalomu alaykum!**\n\nMen **Termux va Dasturlash** bo'yicha yordamchi botman.",
+        'welcome': "🏠 **TERMUX TUTORIAL**\n\n👋 Assalomu alaykum!\n\n💻 Termux, Python, Lua, Java va dasturlash bo'yicha zamonaviy yordamchi.\n\n🟢 Darsliklar va fayllar\n🔵 AI Dasturchi\n🟣 Test, masala va streak\n🟡 Developer Tools va buyruqlar\n\n👇 Kerakli bo'limni tanlang:",
         'btn_termux': "📽️ TERMUX DARSLIK", 'btn_lua': "📽️ LUA PAK DARSLIK",
         'btn_java': "☕ JAVA DASTURLASH", 'btn_apk': "📥 APK YUKLAB OLISH", 'btn_arch': "📱 32/64-bit",
         'btn_ai': "🤖 AI Dasturchi", 'btn_profile': "👤 Mening profilim",
@@ -549,7 +549,7 @@ TEXTS = {
         'btn_support': "✉️ Admin", 'btn_tip': "💡 Maslahat", 'btn_cheatsheet': "📜 Buyruqlar",
         'btn_change_lang': "🌐 Til", 'btn_scripts': "📦 Skript Yaratish", 'btn_files': "🗂 Fayllar",
         'btn_premium': "💎 Premium", 'btn_challenge': "🧩 Kunlik Masala", 'btn_theme': "🎨 Termux Temasi",
-        'btn_back': "🔙 Bosh menyu", 'btn_prev': "⬅️", 'btn_next': "➡️",
+        'btn_back': "🏠 Bosh menyu", 'btn_prev': "⬅️ Oldingi", 'btn_next': "Keyingi ➡️",
         'btn_python': "🐍 PYTHON OLISH", 'btn_lessons_menu': "📚 Menyu", 'btn_back_cheat': "🔙 Orqaga",
         'btn_updates': "🆕 Yangilanishlar", 'btn_devtools': "🧰 Developer Tools", 'streak_btn': "🔥 Kunlik Streak",
         'force_sub_text': "⚠️ **Diqqat!**\n\nBotdan to'liq foydalanish uchun kanalimizga a'zo bo'ling:",
@@ -1050,7 +1050,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'in_lesson_track'
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📽️ TERMUX DARSLIK", callback_data="admin_lesson_track_termux")],
-            [InlineKeyboardButton("📽️ LUA PAK DARSLIKLAR", callback_data="admin_lesson_track_lua")],
+            [InlineKeyboardButton("📽️ LUA PAK DARSLIK", callback_data="admin_lesson_track_lua")],
             [InlineKeyboardButton("🗑 Darslik/video o'chirish", callback_data="admin_lesson_delete")],
             [InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]
         ])
@@ -1233,7 +1233,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "script_generate":
         selected = context.user_data.get('selected_scripts', [])
         if not selected: return await query.answer(t['script_empty'], show_alert=True)
-        script_content = "#!/data/data/com.termux/files/usr/bin/bash\nset -euo pipefail\n\necho \"🚀 O'rnatish boshlanmoqda...\"\n# Avval ko'rib chiqing: bash install.sh\npkg update -y\n"
+        script_content = "#!/data/data/com.termux/files/usr/bin/bash\nset -euo pipefail\n\n# Termux rangli va zamonaviy chiqish\nif [[ -t 1 ]]; then GREEN='\\033[1;32m'; BLUE='\\033[1;34m'; YELLOW='\\033[1;33m'; RED='\\033[1;31m'; RESET='\\033[0m'; else GREEN=''; BLUE=''; YELLOW=''; RED=''; RESET=''; fi\nok(){ printf '%b✅ %s%b\\n' \"$GREEN\" \"$1\" \"$RESET\"; }\ninfo(){ printf '%bℹ️ %s%b\\n' \"$BLUE\" \"$1\" \"$RESET\"; }\nwarn(){ printf '%b⚠️ %s%b\\n' \"$YELLOW\" \"$1\" \"$RESET\"; }\nfail(){ printf '%b❌ %s%b\\n' \"$RED\" \"$1\" \"$RESET\"; }\ntrap 'fail \"O‘rnatishda xato, yuqoridagi qatorni tekshiring\"' ERR\ninfo \"O'rnatish boshlanmoqda...\"\n# Avval ko'rib chiqing: bash install.sh\npkg update -y\n"
         pkg_installs, pip_installs, custom_commands = [], [], []
         for script_id in selected:
             cat_key, item_key = script_id.split("_", 1)
@@ -1255,7 +1255,7 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pip_installs:
             script_content += "pip install --upgrade pip || true\n"
             script_content += f"pip install {' '.join(pip_installs)}\n"
-        script_content += "echo \"✅ TAYYOR!\"\n"
+        script_content += "ok \"TAYYOR!\"\n"
         script_file = BytesIO(script_content.encode('utf-8'))
         script_file.name = "install.sh"
         await context.bot.send_document(chat_id=chat_id, document=script_file, caption=t['script_done'], parse_mode='Markdown')
@@ -1697,6 +1697,8 @@ Kod berilganda uni to'liq o'qing: sintaksis, importlar, async/await, database, T
 "Tuzatib ber", "tekshir" yoki qisqa so'rov kelsa, xabarga qo'shilgan oldingi kodni asosiy kontekst sifatida ishlating.
 Tuzatilgan kodni to'liq markdown code block ichida qaytaring; qisqartirmang va "..." bilan tashlab ketmang.
 Koddan keyin: 1) topilgan xatolar, 2) kiritilgan tuzatishlar, 3) ishga tushirish buyrug'ini qisqa o'zbekcha yozing.
+Javobni zamonaviy va o'qishga qulay formatda yozing: sarlavhalarni **qalin**, buyruq va kodni ```code``` blokida, muhim bo'limlarni 🟢/🔵/🟡/🔴/🟣 belgilar bilan ajrating.
+🟢 muvaffaqiyat, 🔵 ma'lumot, 🟡 ogohlantirish, 🔴 xato, 🟣 tavsiya ma'nosida ishlatilsin. Telegram ranglarni to'g'ridan-to'g'ri bermagani uchun HTML color/span ishlatmang.
 Foydalanuvchi zararli hujum, parol o'g'irlash yoki ruxsatsiz kirish so'rasa, xavfsiz va himoyaga yo'naltirilgan variant bering."""
 
         if is_image and gemini_client:
