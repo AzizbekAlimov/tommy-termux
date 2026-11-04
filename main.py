@@ -1050,6 +1050,7 @@ def get_sec_menu(lang):
                                   [InlineKeyboardButton("📶 Wi-Fi xavfsizligi", callback_data="wifi_guide"),
                                    InlineKeyboardButton("🔐 Wi-Fi parol yaratish", callback_data="wifi_password")],
                                   [InlineKeyboardButton("📡 Wi-Fi/SIM signal optimizatsiyasi", callback_data="signal_guide")],
+                                  [InlineKeyboardButton("🚫 Kanal/guruh qo‘shilishini cheklash", callback_data="join_privacy_guide")],
                                   [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
 
 def get_lessons_keyboard(page, lang, max_lesson=47):
@@ -1319,6 +1320,11 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'in_lesson_number'
         await edit_or_send(query, context, f'🔢 **{video_lang.upper()} video** uchun darslik raqamini yuboring (1-999):',
                            InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data=f'admin_lesson_track_{track}')]]))
+    elif data == 'admin_lesson_skip_attachment':
+        if user_id != ADMIN_ID: return
+        context.user_data['state'] = None
+        await edit_or_send(query, context, '✅ Darslik video sifatida saqlandi.',
+                           InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data='admin_lesson_add')]]))
 
     elif data.startswith("admin_file_cat_"):
         if user_id != ADMIN_ID: return
@@ -1688,6 +1694,19 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
                        "❌ Noma’lum ‘signal booster’ APK, noqonuniy repeater yoki kuchaytirgich ishlatmang — ular tarmoqqa xalaqit berishi va xavf tug‘dirishi mumkin.")
         await edit_or_send(query, context, signal_text, InlineKeyboardMarkup([
             [InlineKeyboardButton("📶 Wi-Fi qo‘llanmasi", callback_data="wifi_guide")],
+            [InlineKeyboardButton("🔙 Xavfsizlik", callback_data="sec_start")]
+        ]))
+    elif data == "join_privacy_guide":
+        privacy_text = ("🚫 **Kanal va guruhlarga ruxsatsiz qo‘shilishdan himoyalanish**\n\n"
+                        "Telegram’da buni bot emas, foydalanuvchining o‘zi Privacy sozlamasidan boshqaradi:\n\n"
+                        "1️⃣ Telegram → **Settings/Sozlamalar**\n"
+                        "2️⃣ **Privacy and Security / Maxfiylik va xavfsizlik**\n"
+                        "3️⃣ **Groups & Channels / Guruhlar va kanallar**\n"
+                        "4️⃣ **Who can add me? / Kim meni qo‘sha oladi?** bo‘limida **My Contacts / Kontaktlarim**ni tanlang.\n"
+                        "5️⃣ **Never Allow / Hech qachon ruxsat berilmasin**ga keraksiz kontaktlarni qo‘shing.\n\n"
+                        "Agar kanal yoki guruhga qo‘shib qo‘yishsa: guruh/kanal profilini oching → **Leave/Chiqish**, kerak bo‘lsa **Report/Block** qiling.\n\n"
+                        "⚠️ Telegram Bot API foydalanuvchining Privacy sozlamasini o‘zi o‘zgartira olmaydi va boshqa odamlar qo‘shishini 100% masofadan bloklay olmaydi.")
+        await edit_or_send(query, context, privacy_text, InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Xavfsizlik", callback_data="sec_start")]
         ]))
 
@@ -2442,7 +2461,8 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await save_lesson_variant(track, number, video_lang, 'channel', match.group(2), source_chat.id)
                 if video_lang == 'uz':
                     context.user_data['state'] = 'in_lesson_attachment'
-                    await update.message.reply_text("✅ O‘zbekcha video linki saqlandi.\n\nPython fayli/linkini yuboring yoki /skip yozing.")
+                    await update.message.reply_text("✅ O‘zbekcha video linki saqlandi.\n\nPython fayli/linkini yuboring yoki Skip tugmasini bosing.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⏭️ Skip — fayl qo‘shmaslik', callback_data='admin_lesson_skip_attachment')]]))
                 else:
                     context.user_data['state'] = None
                     await update.message.reply_text(f"✅ {video_lang.upper()} video linki saqlandi.")
@@ -2461,7 +2481,8 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await save_lesson_variant(track, number, video_lang, source_type, source_id, source_chat_id, update.message.caption)
         if video_lang == 'uz':
             context.user_data['state'] = 'in_lesson_attachment'
-            await update.message.reply_text("✅ O‘zbekcha video saqlandi.\n\n🐍 Python tugmasi kerakmi? Python faylini yuboring yoki link (https://...) jo‘nating. Kerak emas bo‘lsa /skip yozing.")
+            await update.message.reply_text("✅ O‘zbekcha video saqlandi.\n\n🐍 Python fayli/linkini yuboring yoki Skip tugmasini bosing.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⏭️ Skip — fayl qo‘shmaslik', callback_data='admin_lesson_skip_attachment')]]))
         else:
             context.user_data['state'] = None
             await update.message.reply_text(f"✅ {video_lang.upper()} video saqlandi.")
