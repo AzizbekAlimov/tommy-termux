@@ -14,6 +14,12 @@ import secrets
 import string
 import json as json_lib
 import html as html_lib
+try:
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = None
+    np = None
 from urllib.parse import quote
 from io import BytesIO
 from fastapi import FastAPI, Request
@@ -1019,6 +1025,7 @@ def get_admin_keyboard(lang, af_status="off"):
         [InlineKeyboardButton(t['admin_btn_update'], callback_data="admin_update")],
         [InlineKeyboardButton(t['admin_btn_points'], callback_data="admin_points")],
         [InlineKeyboardButton("📚 Darslik boshqaruvi", callback_data="admin_lesson_add")],
+        [InlineKeyboardButton("📶 Wi-Fi QR aniqlash", callback_data="admin_wifi_qr")],
         [InlineKeyboardButton(t['admin_btn_add_file'], callback_data="admin_add_file")],
         [InlineKeyboardButton(af_text, callback_data="admin_toggle_autofwd")],
         [InlineKeyboardButton(t['admin_btn_close'], callback_data="admin_close")]
@@ -1040,6 +1047,9 @@ def get_sec_menu(lang):
                                   [InlineKeyboardButton(t['sec_pass'], callback_data="sec_cat_pass")],
                                   [InlineKeyboardButton(t['sec_exploit'], callback_data="sec_cat_exploit")],
                                   [InlineKeyboardButton(t['sec_network'], callback_data="sec_cat_network")],
+                                  [InlineKeyboardButton("📶 Wi-Fi xavfsizligi", callback_data="wifi_guide"),
+                                   InlineKeyboardButton("🔐 Wi-Fi parol yaratish", callback_data="wifi_password")],
+                                  [InlineKeyboardButton("📡 Wi-Fi/SIM signal optimizatsiyasi", callback_data="signal_guide")],
                                   [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]])
 
 def get_lessons_keyboard(page, lang, max_lesson=47):
@@ -1530,6 +1540,12 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID: return
         af = await get_setting('auto_forward', 'off')
         await edit_or_send(query, context, t['admin_panel'], get_admin_keyboard(lang, af))
+    elif data == "admin_wifi_qr":
+        if user_id != ADMIN_ID: return
+        context.user_data['state'] = 'in_admin_wifi_qr'
+        await edit_or_send(query, context,
+            "📶 **Wi-Fi QR aniqlash**\n\nFaqat o‘zingizga tegishli Wi-Fi QR kod rasmini yuboring. Natija faqat sizga ko‘rsatiladi; bot parolni taxmin qilmaydi yoki boshqa foydalanuvchiga yubormaydi.",
+            InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="admin_menu")]]))
     elif data == "admin_close":
         if user_id != ADMIN_ID: return
         await query.message.delete()
@@ -1632,6 +1648,48 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await edit_or_send(query, context, t['sec_exploit_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
     elif data == "sec_cat_network":
         await edit_or_send(query, context, t['sec_network_text'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back_cheat'], callback_data="sec_start")]]))
+    elif data == "wifi_guide":
+        wifi_text = ("📶 **Wi-Fi xavfsizligi — faqat o‘zingizning tarmog‘ingiz uchun**\n\n"
+                     "✅ Android: Sozlamalar → Wi-Fi → ulangan tarmoq → Share/QR code.\n"
+                     "✅ Router paroli esdan chiqsa, router admin panelidan uni almashtiring.\n"
+                     "✅ WPA3 yoki WPA2-AES ishlating; WEP va ochiq tarmoqdan foydalanmang.\n"
+                     "✅ WPS’ni o‘chiring, router firmware’ini yangilang.\n"
+                     "✅ Wi-Fi nomi va parolini begonalarga bermang.\n\n"
+                     "❌ Bot begona Wi-Fi parolini topmaydi, buzmaydi va yashirincha chiqarib bermaydi.\n\n"
+                     "**O‘zingizning tarmog‘ingiz paroli yo‘qolgan bo‘lsa:** router stikeri, admin paneli, Android QR code yoki router reset orqali tiklang.")
+        await edit_or_send(query, context, wifi_text, InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔐 Kuchli parol yaratish", callback_data="wifi_password")],
+            [InlineKeyboardButton("🔙 Xavfsizlik", callback_data="sec_start")]
+        ]))
+    elif data == "wifi_password":
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*-_=+"
+        password = ''.join(secrets.choice(alphabet) for _ in range(20))
+        await edit_or_send(query, context,
+            f"🔐 **O‘zingizning Wi-Fi routeringiz uchun kuchli parol**\n\n`{password}`\n\nKamida 16–20 belgi ishlating va parolni boshqa odamlarga bermang.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Yangi parol", callback_data="wifi_password")],
+                [InlineKeyboardButton("📶 Wi-Fi qo‘llanmasi", callback_data="wifi_guide"), InlineKeyboardButton("🔙 Orqaga", callback_data="sec_start")]
+            ]))
+    elif data == "signal_guide":
+        signal_text = ("📡 **Wi-Fi va SIM signalini optimallashtirish**\n\n"
+                       "⚠️ Bot yoki oddiy APK radio quvvatini apparat chegarasidan oshirib, signalni majburan kuchaytira olmaydi. Quyidagi usullar xavfsiz va qonuniy:\n\n"
+                       "**Wi-Fi:**\n"
+                       "• Routerni uy markaziga, balandroq va ochiq joyga qo‘ying.\n"
+                       "• 2.4 GHz — uzoq masofa; 5 GHz — tezroq, lekin masofasi qisqaroq.\n"
+                       "• Router kanalini Auto yoki kam band kanalga qo‘ying.\n"
+                       "• Router firmware’ini yangilang va keraksiz qurilmalarni uzing.\n"
+                       "• Katta uy uchun sertifikatlangan mesh/repeater ishlating.\n\n"
+                       "**SIM/uyali tarmoq:**\n"
+                       "• Telefonni deraza yoki ochiq joyda sinab ko‘ring.\n"
+                       "• Airplane mode’ni 10 soniya yoqib-o‘chirib qayta ulaning.\n"
+                       "• Sozlamalarda 4G/5G Auto/Preferred rejimini tanlang.\n"
+                       "• APN’ni operator bergan rasmiy qiymatlarga qaytaring.\n"
+                       "• SIM’ni boshqa telefonda tekshiring va operator qamrov xaritasini ko‘ring.\n\n"
+                       "❌ Noma’lum ‘signal booster’ APK, noqonuniy repeater yoki kuchaytirgich ishlatmang — ular tarmoqqa xalaqit berishi va xavf tug‘dirishi mumkin.")
+        await edit_or_send(query, context, signal_text, InlineKeyboardMarkup([
+            [InlineKeyboardButton("📶 Wi-Fi qo‘llanmasi", callback_data="wifi_guide")],
+            [InlineKeyboardButton("🔙 Xavfsizlik", callback_data="sec_start")]
+        ]))
 
     elif data == "support_start":
         context.user_data['state'] = 'in_support'
@@ -2214,6 +2272,43 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
     except Exception:
         pass
+
+    if user.id == ADMIN_ID and context.user_data.get('state') == 'in_admin_wifi_qr':
+        if not update.message.photo:
+            await update.message.reply_text('📷 Wi-Fi QR kod rasmini yuboring yoki /cancel bosing.')
+            return
+        if cv2 is None or np is None:
+            await update.message.reply_text('❌ QR dekoder o‘rnatilmagan. `opencv-python-headless` dependency’sini o‘rnating.')
+            context.user_data['state'] = None
+            return
+        try:
+            photo = update.message.photo[-1]
+            remote = await photo.get_file()
+            raw = await remote.download_as_bytearray()
+            image = cv2.imdecode(np.frombuffer(bytes(raw), dtype=np.uint8), cv2.IMREAD_COLOR)
+            value, points, _ = cv2.QRCodeDetector().detectAndDecode(image)
+            if not value:
+                await update.message.reply_text('❌ QR kod o‘qilmadi. QR kodni tiniqroq va to‘liq ko‘rinishda yuboring.')
+                return
+            safe_value = html_lib.escape(value)
+            if value.startswith('WIFI:'):
+                fields = {}
+                for part in value[5:].split(';'):
+                    if ':' in part:
+                        key, val = part.split(':', 1)
+                        fields[key] = val.replace('\\;', ';').replace('\\:', ':')
+                result = (f'✅ <b>Wi-Fi QR o‘qildi</b>\n\n'
+                          f'📡 SSID: <code>{html_lib.escape(fields.get("S", "Noma’lum"))}</code>\n'
+                          f'🔐 Parol: <code>{html_lib.escape(fields.get("P", "Parolsiz yoki topilmadi"))}</code>\n'
+                          f'🛡 Himoya: <code>{html_lib.escape(fields.get("T", "Noma’lum"))}</code>')
+            else:
+                result = f'✅ QR ichidagi ma’lumot:\n\n<code>{safe_value}</code>'
+            await update.message.reply_text(result, parse_mode='HTML')
+            context.user_data['state'] = None
+        except Exception:
+            logging.exception('Admin Wi-Fi QR o‘qishda xato')
+            await update.message.reply_text('❌ QR kodni o‘qishda xato. Boshqa tiniq rasm yuboring.')
+        return
 
     if user.id != ADMIN_ID and context.user_data.get('state') == 'in_screenshot':
         if update.message.photo or update.message.document:
