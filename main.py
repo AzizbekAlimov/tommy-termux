@@ -249,6 +249,13 @@ def is_support_attachment(message):
         'story', 'paid_media'
     ))
 
+def is_forwarded_support_message(message):
+    """Aniq forward qilingan postlarni PTB yangi va eski fieldlari orqali taniydi."""
+    return any(getattr(message, name, None) is not None for name in (
+        'forward_origin', 'forward_from', 'forward_from_chat', 'forward_sender_name',
+        'forward_date'
+    ))
+
 async def forward_user_support_message(update, context, lang):
     """Foydalanuvchi murojaatining matnini yoki ixtiyoriy Telegram media turini Adminga yetkazadi."""
     message = update.message
@@ -283,15 +290,33 @@ async def forward_user_support_message(update, context, lang):
                     'Javob berish uchun quyidagi xabarga Reply qiling.'
                 )
                 header = await context.bot.send_message(
-                    chat_id=ADMIN_ID, text=meta, parse_mode='HTML', disable_web_page_preview=True
+                    chat_id=ADMIN_ID, text=meta, parse_mode='HTML', disable_web_page_preview=True,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton('📤 Shu foydalanuvchiga yuborish',
+                                             callback_data=f'support_select_{user.id}')
+                    ]])
                 )
                 await remember_support_route(header.message_id, user.id)
                 context.user_data['support_notified_admin'] = True
 
-            copied = await context.bot.copy_message(
-                chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
-                message_id=message.message_id
-            )
+            if is_forwarded_support_message(message):
+                try:
+                    copied = await context.bot.forward_message(
+                        chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                        message_id=message.message_id
+                    )
+                except Exception:
+                    # Fallback preserves the content even when Telegram disallows the forward attribution.
+                    logging.warning('Forward attribution unavailable; copying support message instead', exc_info=True)
+                    copied = await context.bot.copy_message(
+                        chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                        message_id=message.message_id
+                    )
+            else:
+                copied = await context.bot.copy_message(
+                    chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                    message_id=message.message_id
+                )
             await remember_support_route(copied.message_id, user.id)
             if has_attachment:
                 count += 1
@@ -308,6 +333,28 @@ async def forward_user_support_message(update, context, lang):
         except Exception:
             logging.exception('Foydalanuvchi murojaatini Adminga yuborishda xato')
             await message.reply_text('❌ Xabar yuborilmadi. Birozdan so‘ng qayta urinib ko‘ring.')
+
+async def send_admin_support_message(update, context, target_user_id):
+    """Adminning matnini, media faylini yoki boshqa chatdan forwardini mijozga yetkazadi."""
+    message = update.message
+    if is_forwarded_support_message(message):
+        try:
+            sent = await context.bot.forward_message(
+                chat_id=target_user_id, from_chat_id=update.effective_chat.id,
+                message_id=message.message_id
+            )
+        except Exception:
+            logging.warning('Admin forward manbasini saqlab bo‘lmadi; nusxalashga o‘tildi', exc_info=True)
+            sent = await context.bot.copy_message(
+                chat_id=target_user_id, from_chat_id=update.effective_chat.id,
+                message_id=message.message_id
+            )
+    else:
+        sent = await context.bot.copy_message(
+            chat_id=target_user_id, from_chat_id=update.effective_chat.id,
+            message_id=message.message_id
+        )
+    return sent
 
 async def ensure_default_categories():
     if not db_pool: return
@@ -903,7 +950,7 @@ TEXTS = {
         'cheatsheet_menu': "📜 **Buyruqlar**\n\nBo'limni tanlang:",
         'cat_files': "📁 Fayllar", 'cat_packages': "📦 Paketlar", 'cat_network': "🌐 Tarmoq", 'cat_system': "⚙️ Tizim",
         'apk_caption': "📱 **Termux APK**", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌ Xatolik!",
-        'support_prompt': "✉️ **Admin bilan bog‘lanish**\n\nMatn, rasm, video, APK/hujjat, audio va boshqa xabarlarni yuborishingiz mumkin. Bir murojaatda 10 tagacha fayl/media yuboriladi; bir nechta xabarni ketma-ket yuborsangiz ham bo‘ladi. Yuborilganlar faqat Admin’ga boradi.\n\nTugatgach **Murojaatni yakunlash** tugmasini bosing.",
+        'support_prompt': "✉️ **Admin bilan bog‘lanish**\n\nMatn, rasm, video, APK/hujjat, audio va boshqa xabarlarni yuborishingiz mumkin. Kanal, guruh yoki chatdan postni botga forward qilsangiz ham Admin’ga boradi. Bir murojaatda 10 tagacha fayl/media yuboriladi; bir nechta xabarni ketma-ket yuborsangiz ham bo‘ladi. Yuborilganlar faqat Admin’ga boradi.\n\nTugatgach **Murojaatni yakunlash** tugmasini bosing.",
         'support_sent': "✅ Yuborildi!", 'support_reply': "📬 **Admin:**\n\n",
         'profile_text': "👤 **Profil**\n\n⭐ **Ball:** {score}\n🏅 **Daraja:** {level}\n📊 **O'rin:** #{rank}\n💎 **Holat:** {status}",
         'btn_daily_bonus': "🎁 Kunlik bonus", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Ertaga!",
@@ -1299,6 +1346,38 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_chat_action(chat_id=chat_id, action=action)
     except Exception:
         pass
+
+    if data.startswith('support_select_'):
+        if user_id != ADMIN_ID:
+            await query.answer('Faqat Admin uchun.', show_alert=True)
+            return
+        try:
+            target_user_id = int(data.rsplit('_', 1)[1])
+        except (ValueError, IndexError):
+            await query.answer('Foydalanuvchi topilmadi.', show_alert=True)
+            return
+        context.user_data['state'] = None
+        context.user_data['support_send_target'] = target_user_id
+        await query.answer('Qabul qiluvchi tanlandi.')
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(f'📤 <b>{target_user_id}</b> foydalanuvchiga yuborish rejimi yoqildi.\n\n'
+                  'Endi boshqa chat, guruh yoki kanaldan xabarlarni shu bot chatiga forward qiling. '
+                  'Bir nechta xabarni ketma-ket yuborishingiz mumkin. Tugatgach rejimni o‘chiring.'),
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('⏹ Yuborish rejimini tugatish', callback_data='support_send_stop')
+            ]])
+        )
+        return
+    if data == 'support_send_stop':
+        if user_id != ADMIN_ID:
+            await query.answer('Faqat Admin uchun.', show_alert=True)
+            return
+        context.user_data.pop('support_send_target', None)
+        await query.answer('Yuborish rejimi o‘chirildi.')
+        await query.edit_message_text('⏹ Foydalanuvchiga yuborish rejimi tugatildi.')
+        return
 
     if data == "check_sub":
         SUBSCRIPTION_CACHE.pop(user_id, None)
@@ -2514,24 +2593,49 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
+    if (user.id != ADMIN_ID and is_forwarded_support_message(update.message)
+            and context.user_data.get('state') != 'in_support'):
+        context.user_data['state'] = 'in_support'
+        context.user_data['support_attachment_count'] = 0
+        context.user_data['support_notified_admin'] = False
+
     if user.id == ADMIN_ID and update.message.reply_to_message:
         target = await get_support_route(update.message.reply_to_message.message_id)
         if target:
+            context.user_data['support_send_target'] = target
             try:
                 if update.message.text and not is_support_attachment(update.message):
                     await context.bot.send_message(
                         chat_id=target, text=f"📬 Admin:\n\n{update.message.text}"
                     )
                 else:
-                    await context.bot.copy_message(
-                        chat_id=target, from_chat_id=update.effective_chat.id,
-                        message_id=update.message.message_id
-                    )
-                await update.message.reply_text('✅ Foydalanuvchiga yuborildi.')
+                    await send_admin_support_message(update, context, target)
+                await update.message.reply_text(
+                    '✅ Foydalanuvchiga yuborildi. Endi shu botga yuborilgan xabarlaringiz ham tanlangan foydalanuvchiga boradi.',
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton('⏹ Yuborish rejimini tugatish', callback_data='support_send_stop')
+                    ]])
+                )
             except Exception:
                 logging.exception('Admin javobini foydalanuvchiga yuborishda xato')
                 await update.message.reply_text('❌ Yuborilmadi. Foydalanuvchi botni bloklamaganini tekshiring.')
             return
+
+    if user.id == ADMIN_ID and context.user_data.get('support_send_target'):
+        try:
+            await send_admin_support_message(
+                update, context, int(context.user_data['support_send_target'])
+            )
+            await update.message.reply_text(
+                '✅ Foydalanuvchiga yuborildi.',
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('⏹ Yuborish rejimini tugatish', callback_data='support_send_stop')
+                ]])
+            )
+        except Exception:
+            logging.exception('Admin forwardini tanlangan foydalanuvchiga yuborishda xato')
+            await update.message.reply_text('❌ Xabar yuborilmadi. Foydalanuvchi botni bloklamaganini tekshiring.')
+        return
 
     if user.id == ADMIN_ID and PENDING_VIDEOS:
         if update.message.document or update.message.video or update.message.photo or update.message.audio:
