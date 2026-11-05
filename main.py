@@ -67,6 +67,9 @@ PENDING_VIDEOS = {}
 AUTO_ADD_TIMEOUT = 600
 SUBSCRIPTION_CACHE = {}
 SUBSCRIPTION_CACHE_TTL = 60
+SUPPORT_ATTACHMENT_LIMIT = 10
+SUPPORT_MESSAGE_ROUTES = {}
+SUPPORT_USER_LOCKS = {}
 
 # ==========================================
 # YORDAMCHI
@@ -189,12 +192,122 @@ async def init_db():
                 UNIQUE(track, lesson_number)
             )''')
             await conn.execute("ALTER TABLE lesson_entries ADD COLUMN IF NOT EXISTS video_variants JSONB NOT NULL DEFAULT '{}'::jsonb")
+            await conn.execute('''CREATE TABLE IF NOT EXISTS support_message_routes (
+                admin_message_id BIGINT PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
             # Bo'sh Lua tugmalari va olib tashlangan Termux 48 yozuvi qayta chiqmasin.
             await conn.execute("DELETE FROM lesson_entries WHERE track = 'lua' AND lesson_number BETWEEN 10 AND 50")
             await conn.execute("DELETE FROM lesson_entries WHERE track = 'termux' AND lesson_number = 48")
         await ensure_default_categories()
     except Exception as e:
         logging.error(f"Baza xatosi: {e}")
+
+async def remember_support_route(admin_message_id, user_id):
+    """Admin chatidagi murojaat nusxasini foydalanuvchi IDsi bilan bog'laydi."""
+    SUPPORT_MESSAGE_ROUTES[int(admin_message_id)] = int(user_id)
+    if not db_pool:
+        return
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute('''INSERT INTO support_message_routes (admin_message_id, user_id)
+                VALUES ($1, $2) ON CONFLICT (admin_message_id)
+                DO UPDATE SET user_id = EXCLUDED.user_id, created_at = CURRENT_TIMESTAMP''',
+                int(admin_message_id), int(user_id))
+    except Exception:
+        logging.exception('Murojaat javob yo‘nalishini saqlashda xato')
+
+async def get_support_route(admin_message_id):
+    target = SUPPORT_MESSAGE_ROUTES.get(int(admin_message_id))
+    if target:
+        return target
+    if not db_pool:
+        return None
+    try:
+        async with db_pool.acquire() as conn:
+            target = await conn.fetchval(
+                'SELECT user_id FROM support_message_routes WHERE admin_message_id = $1',
+                int(admin_message_id))
+        if target:
+            SUPPORT_MESSAGE_ROUTES[int(admin_message_id)] = int(target)
+            return int(target)
+    except Exception:
+        logging.exception('Murojaat javob yo‘nalishini o‘qishda xato')
+    return None
+
+def is_support_attachment(message):
+    """Telegramning photo, video, document, audio va boshqa qo‘shimchalarini taniydi."""
+    try:
+        if getattr(message, 'effective_attachment', None) is not None:
+            return True
+    except Exception:
+        pass
+    return any(getattr(message, name, None) is not None for name in (
+        'photo', 'video', 'document', 'audio', 'voice', 'animation', 'sticker',
+        'video_note', 'contact', 'location', 'venue', 'poll', 'dice', 'game',
+        'story', 'paid_media'
+    ))
+
+async def forward_user_support_message(update, context, lang):
+    """Foydalanuvchi murojaatining matnini yoki ixtiyoriy Telegram media turini Adminga yetkazadi."""
+    message = update.message
+    user = update.effective_user
+    lock = SUPPORT_USER_LOCKS.setdefault(user.id, asyncio.Lock())
+    async with lock:
+        has_attachment = is_support_attachment(message)
+        if not (message.text or message.caption or has_attachment):
+            await message.reply_text('⚠️ Matn yoki yuboriladigan fayl/media jo‘nating.')
+            return
+
+        count = int(context.user_data.get('support_attachment_count', 0))
+        if has_attachment and count >= SUPPORT_ATTACHMENT_LIMIT:
+            await message.reply_text(
+                f'⚠️ Bir murojaatda eng ko‘pi bilan {SUPPORT_ATTACHMENT_LIMIT} ta fayl/media yuboriladi. '
+                'Yakunlang va yangi murojaat oching.'
+            )
+            return
+
+        try:
+            if not context.user_data.get('support_notified_admin'):
+                display_name = html_lib.escape(' '.join(
+                    x for x in [user.first_name, user.last_name] if x
+                ) or 'Noma’lum foydalanuvchi')
+                username_line = (f'🔗 @{html_lib.escape(user.username)}' if user.username
+                                 else '🔗 username yo‘q')
+                meta = (
+                    '📩 <b>Yangi murojaat</b>\n\n'
+                    f'👤 <a href="tg://user?id={user.id}">{display_name}</a>\n'
+                    f'{username_line}\n🆔 <code>{user.id}</code>\n'
+                    f'🕒 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+                    'Javob berish uchun quyidagi xabarga Reply qiling.'
+                )
+                header = await context.bot.send_message(
+                    chat_id=ADMIN_ID, text=meta, parse_mode='HTML', disable_web_page_preview=True
+                )
+                await remember_support_route(header.message_id, user.id)
+                context.user_data['support_notified_admin'] = True
+
+            copied = await context.bot.copy_message(
+                chat_id=ADMIN_ID, from_chat_id=update.effective_chat.id,
+                message_id=message.message_id
+            )
+            await remember_support_route(copied.message_id, user.id)
+            if has_attachment:
+                count += 1
+                context.user_data['support_attachment_count'] = count
+                count_text = f' ({count}/{SUPPORT_ATTACHMENT_LIMIT} fayl/media)'
+            else:
+                count_text = ''
+            await message.reply_text(
+                f'✅ Adminga yuborildi{count_text}. Davom ettirishingiz mumkin; tugatgach yakunlash tugmasini bosing.',
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('✅ Murojaatni yakunlash', callback_data='support_done')
+                ]])
+            )
+        except Exception:
+            logging.exception('Foydalanuvchi murojaatini Adminga yuborishda xato')
+            await message.reply_text('❌ Xabar yuborilmadi. Birozdan so‘ng qayta urinib ko‘ring.')
 
 async def ensure_default_categories():
     if not db_pool: return
@@ -790,7 +903,7 @@ TEXTS = {
         'cheatsheet_menu': "📜 **Buyruqlar**\n\nBo'limni tanlang:",
         'cat_files': "📁 Fayllar", 'cat_packages': "📦 Paketlar", 'cat_network': "🌐 Tarmoq", 'cat_system': "⚙️ Tizim",
         'apk_caption': "📱 **Termux APK**", 'apk_file_name': "Termux.apk", 'apk_loading': "⏳...", 'apk_too_big': "⚠️", 'apk_error': "❌ Xatolik!",
-        'support_prompt': "✉️ **Admin**\n\nXabaringizni yozing:",
+        'support_prompt': "✉️ **Admin bilan bog‘lanish**\n\nMatn, rasm, video, APK/hujjat, audio va boshqa xabarlarni yuborishingiz mumkin. Bir murojaatda 10 tagacha fayl/media yuboriladi; bir nechta xabarni ketma-ket yuborsangiz ham bo‘ladi. Yuborilganlar faqat Admin’ga boradi.\n\nTugatgach **Murojaatni yakunlash** tugmasini bosing.",
         'support_sent': "✅ Yuborildi!", 'support_reply': "📬 **Admin:**\n\n",
         'profile_text': "👤 **Profil**\n\n⭐ **Ball:** {score}\n🏅 **Daraja:** {level}\n📊 **O'rin:** #{rank}\n💎 **Holat:** {status}",
         'btn_daily_bonus': "🎁 Kunlik bonus", 'bonus_claimed': "✅ +20!", 'bonus_wait': "⏳ Ertaga!",
@@ -1712,7 +1825,17 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "support_start":
         context.user_data['state'] = 'in_support'
-        await edit_or_send(query, context, t['support_prompt'], InlineKeyboardMarkup([[InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]]))
+        context.user_data['support_attachment_count'] = 0
+        context.user_data['support_notified_admin'] = False
+        await edit_or_send(query, context, t['support_prompt'], InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Murojaatni yakunlash", callback_data="support_done")],
+            [InlineKeyboardButton(t['btn_back'], callback_data="back_to_start")]
+        ]))
+    elif data == "support_done":
+        context.user_data['state'] = None
+        context.user_data.pop('support_attachment_count', None)
+        context.user_data.pop('support_notified_admin', None)
+        await edit_or_send(query, context, "✅ Murojaat yakunlandi.", get_main_menu(lang, user_id))
 
     elif data == "screenshot_start":
         context.user_data['state'] = 'in_screenshot'
@@ -2391,6 +2514,25 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
+    if user.id == ADMIN_ID and update.message.reply_to_message:
+        target = await get_support_route(update.message.reply_to_message.message_id)
+        if target:
+            try:
+                if update.message.text and not is_support_attachment(update.message):
+                    await context.bot.send_message(
+                        chat_id=target, text=f"📬 Admin:\n\n{update.message.text}"
+                    )
+                else:
+                    await context.bot.copy_message(
+                        chat_id=target, from_chat_id=update.effective_chat.id,
+                        message_id=update.message.message_id
+                    )
+                await update.message.reply_text('✅ Foydalanuvchiga yuborildi.')
+            except Exception:
+                logging.exception('Admin javobini foydalanuvchiga yuborishda xato')
+                await update.message.reply_text('❌ Yuborilmadi. Foydalanuvchi botni bloklamaganini tekshiring.')
+            return
+
     if user.id == ADMIN_ID and PENDING_VIDEOS:
         if update.message.document or update.message.video or update.message.photo or update.message.audio:
             last_msg_id = list(PENDING_VIDEOS.keys())[-1]
@@ -2685,36 +2827,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(t['admin_bcast_cancel']); return
         await process_broadcast(update, context); return
 
-    if context.user_data.get('state') == 'in_support':
-        if update.message.text:
-            display_name = " ".join(x for x in [user.first_name, user.last_name] if x) or "Noma'lum foydalanuvchi"
-            safe_name = html_lib.escape(display_name)
-            safe_text = html_lib.escape(update.message.text)
-            profile_url = f"tg://user?id={user.id}"
-            clickable_id = f'<a href="{profile_url}">{user.id}</a>'
-            if user.username:
-                safe_username = html_lib.escape(user.username)
-                username_line = f'🔗 <a href="https://t.me/{safe_username}">@{safe_username}</a>'
-            else:
-                username_line = '🔗 username yo‘q — ID orqali profilga kirish mumkin'
-            am = f"📩 <b>Murojaat!</b>\n\n👤 <b>{safe_name}</b>\n{username_line}\n🆔 {clickable_id}\n\n💬 {safe_text}"
-            try:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=am, parse_mode='HTML',
-                    disable_web_page_preview=True)
-                await update.message.reply_text(t['support_sent'], reply_markup=get_main_menu(lang, user.id))
-            except Exception: pass
-            context.user_data['state'] = None
+    if user.id != ADMIN_ID and context.user_data.get('state') == 'in_support':
+        await forward_user_support_message(update, context, lang)
         return
-
-    if user.id == ADMIN_ID and update.message.reply_to_message:
-        original = update.message.reply_to_message.text or ""
-        m = re.search(r'tg://user\?id=(\d+)', original) or re.search(r'🆔\s+`?(\d+)', original)
-        if m:
-            target = int(m.group(1))
-            try:
-                await context.bot.send_message(chat_id=target, text=f"{t['support_reply']}{update.message.text}")
-                await update.message.reply_text("✅")
-            except Exception as e: await update.message.reply_text(f"❌ {e}")
 
 async def process_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(TEXTS[context.user_data.get('lang', 'uz')]['admin_bcast_wait'])
