@@ -2379,38 +2379,71 @@ async def run_media_command(command, timeout=180):
 
 async def synthesize_translated_audio(text):
     """Generate neutral synthetic speech for the translated transcript and return a WAV file."""
-    if not gemini_client or not getattr(gemini_client.aio, 'interactions', None):
-        raise RuntimeError('Ovoz yaratish uchun yangi Google GenAI SDK va GEMINI_API_KEY kerak')
+    if not gemini_client:
+        raise RuntimeError('Ovoz yaratish uchun GEMINI_API_KEY sozlanishi kerak')
     wav_chunks = []
     chunks = split_translation_text(text, max_chars=4800)
     if not chunks:
         raise RuntimeError('Tarjima matni bo‘sh')
+    models = list(dict.fromkeys([
+        TRANSLATION_TTS_MODEL,
+        'gemini-3.8-flash-lite-tts',
+        'gemini-2.5-flash-preview-tts'
+    ]))
     for index, chunk in enumerate(chunks, start=1):
         clean_text = re.sub(r'```.*?```', '', chunk, flags=re.DOTALL)
         clean_text = re.sub(r'[*_`#]+', '', clean_text).strip()
         if not clean_text:
             continue
-        interaction = await asyncio.wait_for(gemini_client.aio.interactions.create(
-            model=TRANSLATION_TTS_MODEL,
-            input=[{
-                'type': 'user_input',
-                'content': [{
-                    'type': 'text',
-                    'text': clean_text,
-                    'annotations': [{
-                        'type': 'speech_metadata',
-                        'style': 'clear, natural, neutral narration'
-                    }]
-                }]
-            }],
-            response_format={'type': 'audio'},
-            generation_config={'speech_config': [{'voice': 'Charon'}]}
-        ), timeout=300)
-        audio = getattr(interaction, 'output_audio', None)
-        encoded = (audio.get('data') if isinstance(audio, dict) else getattr(audio, 'data', None))
-        if not encoded:
-            raise RuntimeError(f'{index}-qism uchun TTS audio qaytmadi')
-        wav_chunks.append(base64.b64decode(encoded))
+        errors = []
+        generated_audio = None
+        for model_name in models:
+            try:
+                response = await asyncio.wait_for(gemini_client.aio.models.generate_content(
+                    model=model_name,
+                    contents=clean_text,
+                    config={
+                        'response_modalities': ['AUDIO'],
+                        'speech_config': {
+                            'voice_config': {
+                                'prebuilt_voice_config': {'voice_name': 'Charon'}
+                            }
+                        }
+                    }
+                ), timeout=300)
+                for part in (getattr(response, 'parts', None) or []):
+                    inline_data = getattr(part, 'inline_data', None)
+                    data = (inline_data.get('data') if isinstance(inline_data, dict)
+                            else getattr(inline_data, 'data', None))
+                    if data:
+                        generated_audio = base64.b64decode(data) if isinstance(data, str) else bytes(data)
+                        break
+                if generated_audio:
+                    break
+                errors.append(f'{model_name}: javobda audio part yo‘q')
+            except Exception as exc:
+                errors.append(f'{model_name}: {type(exc).__name__}')
+                logging.warning('TTS %s modeli ishlamadi: %s', model_name, type(exc).__name__)
+        # Keep the current Interactions endpoint as a final path for deployments that expose it.
+        if not generated_audio and getattr(getattr(gemini_client, 'aio', None), 'interactions', None):
+            try:
+                interaction = await asyncio.wait_for(gemini_client.aio.interactions.create(
+                    model=TRANSLATION_TTS_MODEL,
+                    input=[{'type': 'user_input', 'content': [{'type': 'text', 'text': clean_text}]}],
+                    response_format={'type': 'audio'},
+                    generation_config={'speech_config': [{'voice': 'Charon'}]}
+                ), timeout=300)
+                audio = getattr(interaction, 'output_audio', None)
+                encoded = (audio.get('data') if isinstance(audio, dict)
+                           else getattr(audio, 'data', None))
+                if encoded:
+                    generated_audio = base64.b64decode(encoded)
+            except Exception as exc:
+                errors.append(f'Interactions: {type(exc).__name__}')
+                logging.warning('TTS Interactions fallback ishlamadi: %s', type(exc).__name__)
+        if not generated_audio:
+            raise RuntimeError(f'{index}-qism uchun TTS audio olinmadi. ' + '; '.join(errors))
+        wav_chunks.append(generated_audio)
     if not wav_chunks:
         raise RuntimeError('TTS uchun gapiradigan matn topilmadi')
     combined = BytesIO()
@@ -2802,7 +2835,7 @@ async def handle_media_translation(update, context):
                 try:
                     await status.edit_text(
                         '⚠️ Matnli transkript va tarjima tayyor, lekin audio/video fayl yaratilmadi. '
-                        f'Sabab: {type(speech_exc).__name__}. TTS uchun GEMINI_API_KEY, media yig‘ish uchun ffmpeg kerak.'
+                        f'Sabab: {str(speech_exc)[:450]}. GEMINI_API_KEY va serverdagi ffmpeg sozlamalarini tekshiring.'
                     )
                 except Exception:
                     pass
