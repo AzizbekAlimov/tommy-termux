@@ -2262,6 +2262,26 @@ def split_translation_text(text, max_chars=2600):
         chunks.append(remaining)
     return chunks
 
+def compact_api_error(exc, max_chars=350):
+    """Return a short provider error detail without exposing common API-key formats."""
+    text = re.sub(r'AIza[0-9A-Za-z_-]{20,}', '[API kalit yashirildi]', str(exc or 'Noma’lum xato'))
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:max_chars] or type(exc).__name__
+
+def uzbek_cyrillic_to_latin(text):
+    """Convert Cyrillic Uzbek output to Uzbek Latin while preserving case and punctuation."""
+    mapping = {
+        'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ё':'Yo','Ж':'J','З':'Z','И':'I','Й':'Y',
+        'К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T','У':'U','Ф':'F',
+        'Х':'X','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Shch','Ъ':'','Ы':'I','Ь':'','Э':'E','Ю':'Yu','Я':'Ya',
+        'Ў':'O‘','Қ':'Q','Ғ':'G‘','Ҳ':'H',
+        'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'j','з':'z','и':'i','й':'y',
+        'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
+        'х':'x','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'i','ь':'','э':'e','ю':'yu','я':'ya',
+        'ў':'o‘','қ':'q','ғ':'g‘','ҳ':'h'
+    }
+    return ''.join(mapping.get(char, char) for char in str(text or ''))
+
 async def transcribe_audio_bytes(audio_bytes, filename, mime_type):
     """Transcribe speech with Whisper when configured, then fall back to Gemini audio."""
     errors = []
@@ -2317,6 +2337,8 @@ async def translate_transcript(text, target_code):
             'Do not summarize, censor, add commentary, or omit repetitions. If the source marks '
             'a word [inaudible], translate that marker naturally. Output only the translation.'
         )
+        if target_code == 'uz':
+            system_prompt += ' Write Uzbek only in the Latin alphabet; do not use Cyrillic Uzbek.'
         errors = []
         translated = ''
         if groq_client:
@@ -2368,7 +2390,10 @@ async def translate_transcript(text, target_code):
         if not translated:
             raise RuntimeError(f'{index}-qism tarjima qilinmadi. ' + ', '.join(errors))
         translated_chunks.append(translated)
-    return '\n'.join(translated_chunks)
+    result = '\n'.join(translated_chunks)
+    if target_code == 'uz':
+        result = uzbek_cyrillic_to_latin(result)
+    return result
 
 async def run_media_command(command, timeout=180):
     """Run ffmpeg away from the asyncio event loop."""
@@ -2399,17 +2424,18 @@ async def synthesize_translated_audio(text):
         generated_audio = None
         for model_name in models:
             try:
+                tts_config = types.GenerateContentConfig(
+                    response_modalities=['AUDIO'],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name='Charon')
+                        )
+                    )
+                )
                 response = await asyncio.wait_for(gemini_client.aio.models.generate_content(
                     model=model_name,
                     contents=clean_text,
-                    config={
-                        'response_modalities': ['AUDIO'],
-                        'speech_config': {
-                            'voice_config': {
-                                'prebuilt_voice_config': {'voice_name': 'Charon'}
-                            }
-                        }
-                    }
+                    config=tts_config
                 ), timeout=300)
                 for part in (getattr(response, 'parts', None) or []):
                     inline_data = getattr(part, 'inline_data', None)
@@ -2422,8 +2448,9 @@ async def synthesize_translated_audio(text):
                     break
                 errors.append(f'{model_name}: javobda audio part yo‘q')
             except Exception as exc:
-                errors.append(f'{model_name}: {type(exc).__name__}')
-                logging.warning('TTS %s modeli ishlamadi: %s', model_name, type(exc).__name__)
+                detail = compact_api_error(exc)
+                errors.append(f'{model_name}: {detail}')
+                logging.warning('TTS %s modeli ishlamadi: %s', model_name, detail)
         # Keep the current Interactions endpoint as a final path for deployments that expose it.
         if not generated_audio and getattr(getattr(gemini_client, 'aio', None), 'interactions', None):
             try:
@@ -2439,8 +2466,9 @@ async def synthesize_translated_audio(text):
                 if encoded:
                     generated_audio = base64.b64decode(encoded)
             except Exception as exc:
-                errors.append(f'Interactions: {type(exc).__name__}')
-                logging.warning('TTS Interactions fallback ishlamadi: %s', type(exc).__name__)
+                detail = compact_api_error(exc)
+                errors.append(f'Interactions: {detail}')
+                logging.warning('TTS Interactions fallback ishlamadi: %s', detail)
         if not generated_audio:
             raise RuntimeError(f'{index}-qism uchun TTS audio olinmadi. ' + '; '.join(errors))
         wav_chunks.append(generated_audio)
@@ -2833,9 +2861,18 @@ async def handle_media_translation(update, context):
             except Exception as speech_exc:
                 logging.exception('Tarjima qilingan audio/video chiqishini tayyorlashda xato')
                 try:
+                    detail = compact_api_error(speech_exc, max_chars=1100)
+                    lowered = detail.lower()
+                    if 'tts audio olinmadi' in lowered or 'clienterror' in lowered or 'notfound' in lowered:
+                        advice = ('Gemini TTS modeliga API kalitdan ruxsat, billing va google-genai >= 2.25.0 '
+                                  'versiyasini tekshiring. Bu matn tarjimasidan alohida xizmat.')
+                    elif 'ffmpeg' in lowered or 'video yig‘ilmadi' in lowered or 'codec' in lowered:
+                        advice = 'Serverda ffmpeg va libx264/libopus codec o‘rnatilganini tekshiring.'
+                    else:
+                        advice = 'Telegram fayl yuborish limiti va server logini tekshiring.'
                     await status.edit_text(
-                        '⚠️ Matnli transkript va tarjima tayyor, lekin audio/video fayl yaratilmadi. '
-                        f'Sabab: {str(speech_exc)[:450]}. GEMINI_API_KEY va serverdagi ffmpeg sozlamalarini tekshiring.'
+                        'Matnli transkript va tarjima tayyor, lekin audio/video fayl yaratilmadi.\n'
+                        f'Qaytgan xato: {detail}\n{advice}'
                     )
                 except Exception:
                     pass
