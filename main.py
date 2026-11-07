@@ -2404,7 +2404,7 @@ async def run_media_command(command, timeout=180):
 
 async def synthesize_translated_audio(text):
     """Generate neutral synthetic speech for the translated transcript and return a WAV file."""
-    if not gemini_client:
+    if not GEMINI_API_KEY:
         raise RuntimeError('Ovoz yaratish uchun GEMINI_API_KEY sozlanishi kerak')
     wav_chunks = []
     chunks = split_translation_text(text, max_chars=4800)
@@ -2424,51 +2424,52 @@ async def synthesize_translated_audio(text):
         generated_audio = None
         for model_name in models:
             try:
-                tts_config = types.GenerateContentConfig(
-                    response_modalities=['AUDIO'],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name='Charon')
-                        )
-                    )
-                )
-                response = await asyncio.wait_for(gemini_client.aio.models.generate_content(
-                    model=model_name,
-                    contents=clean_text,
-                    config=tts_config
-                ), timeout=300)
-                for part in (getattr(response, 'parts', None) or []):
-                    inline_data = getattr(part, 'inline_data', None)
-                    data = (inline_data.get('data') if isinstance(inline_data, dict)
-                            else getattr(inline_data, 'data', None))
-                    if data:
-                        generated_audio = base64.b64decode(data) if isinstance(data, str) else bytes(data)
-                        break
-                if generated_audio:
+                request_body = {
+                    'model': model_name,
+                    'input': [{
+                        'type': 'user_input',
+                        'content': [{
+                            'type': 'text',
+                            'text': clean_text,
+                            'annotations': [{
+                                'type': 'speech_metadata',
+                                'style': 'clear, natural, neutral narration'
+                            }]
+                        }]
+                    }],
+                    'response_format': {'type': 'audio'},
+                    'generation_config': {'speech_config': [{'voice': 'Charon'}]}
+                }
+                timeout = aiohttp.ClientTimeout(total=300, connect=30, sock_read=270)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(
+                        'https://generativelanguage.googleapis.com/v1beta/interactions',
+                        headers={'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json'},
+                        json=request_body
+                    ) as response:
+                        response_text = await response.text()
+                        if response.status < 200 or response.status >= 300:
+                            raise RuntimeError(f'HTTP {response.status}: {response_text[:1200]}')
+                        interaction = json_lib.loads(response_text)
+                audio = interaction.get('output_audio') or {}
+                encoded = audio.get('data') if isinstance(audio, dict) else None
+                if not encoded:
+                    # Support both unary output_audio and the documented step-content response shape.
+                    for step in interaction.get('steps') or []:
+                        for content in step.get('content') or []:
+                            if content.get('type') in ('audio', 'output_audio') and content.get('data'):
+                                encoded = content['data']
+                                break
+                        if encoded:
+                            break
+                if encoded:
+                    generated_audio = base64.b64decode(encoded, validate=True)
                     break
-                errors.append(f'{model_name}: javobda audio part yo‘q')
+                errors.append(f'{model_name}: javobda audio ma’lumoti yo‘q')
             except Exception as exc:
                 detail = compact_api_error(exc)
                 errors.append(f'{model_name}: {detail}')
                 logging.warning('TTS %s modeli ishlamadi: %s', model_name, detail)
-        # Keep the current Interactions endpoint as a final path for deployments that expose it.
-        if not generated_audio and getattr(getattr(gemini_client, 'aio', None), 'interactions', None):
-            try:
-                interaction = await asyncio.wait_for(gemini_client.aio.interactions.create(
-                    model=TRANSLATION_TTS_MODEL,
-                    input=[{'type': 'user_input', 'content': [{'type': 'text', 'text': clean_text}]}],
-                    response_format={'type': 'audio'},
-                    generation_config={'speech_config': [{'voice': 'Charon'}]}
-                ), timeout=300)
-                audio = getattr(interaction, 'output_audio', None)
-                encoded = (audio.get('data') if isinstance(audio, dict)
-                           else getattr(audio, 'data', None))
-                if encoded:
-                    generated_audio = base64.b64decode(encoded)
-            except Exception as exc:
-                detail = compact_api_error(exc)
-                errors.append(f'Interactions: {detail}')
-                logging.warning('TTS Interactions fallback ishlamadi: %s', detail)
         if not generated_audio:
             raise RuntimeError(f'{index}-qism uchun TTS audio olinmadi. ' + '; '.join(errors))
         wav_chunks.append(generated_audio)
