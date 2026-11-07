@@ -54,6 +54,16 @@ TRANSLATION_GEMINI_MODEL = os.environ.get("TRANSLATION_GEMINI_MODEL", "gemini-3.
 TRANSLATION_TTS_MODEL = os.environ.get("TRANSLATION_TTS_MODEL", "gemini-3.8-flash-tts")
 TRANSLATION_MAX_MEDIA_BYTES = max(1, min(int(os.environ.get("TRANSLATION_MAX_MEDIA_MB", "20")), 2000)) * 1024 * 1024
 TRANSLATION_MAX_OUTPUT_BYTES = max(1, min(int(os.environ.get("TRANSLATION_MAX_OUTPUT_MB", "49")), 2000)) * 1024 * 1024
+try:
+    MENU_CUSTOM_EMOJI_IDS = json_lib.loads(os.environ.get("MENU_CUSTOM_EMOJI_IDS", "{}"))
+    if not isinstance(MENU_CUSTOM_EMOJI_IDS, dict):
+        MENU_CUSTOM_EMOJI_IDS = {}
+    MENU_CUSTOM_EMOJI_IDS = {
+        str(key): str(value) for key, value in MENU_CUSTOM_EMOJI_IDS.items()
+        if re.fullmatch(r"\d+", str(value))
+    }
+except Exception:
+    MENU_CUSTOM_EMOJI_IDS = {}
 
 ADMIN_ID = 7383782449
 FORCE_SUB_CHANNEL = "@Tommy_cheat"
@@ -1145,25 +1155,41 @@ def get_translation_language_keyboard():
     rows.append([InlineKeyboardButton('🏠 Bosh menyu', callback_data='back_to_start')])
     return InlineKeyboardMarkup(rows)
 
+def main_menu_button(label, callback_data, icon_key):
+    """Build a menu button with an optional Premium custom emoji icon."""
+    icon_id = MENU_CUSTOM_EMOJI_IDS.get(icon_key)
+    if icon_id:
+        # Hide the regular emoji prefix when a custom icon is configured.
+        clean_label = re.sub(r"^[^\w]+", "", str(label), flags=re.UNICODE).strip()
+        try:
+            return InlineKeyboardButton(
+                clean_label or str(label), callback_data=callback_data,
+                icon_custom_emoji_id=icon_id
+            )
+        except TypeError:
+            # Older python-telegram-bot versions do not serialize this Bot API field.
+            logging.warning("Custom emoji menu icons require python-telegram-bot >= 22.7")
+    return InlineKeyboardButton(label, callback_data=callback_data)
+
 def get_main_menu(lang, user_id):
     t = TEXTS[lang]
     keyboard = [
-        [InlineKeyboardButton(t['btn_termux'], callback_data="page_1"), InlineKeyboardButton(t['btn_lua'], callback_data="lua_page_1")],
-        [InlineKeyboardButton(t['btn_java'], callback_data="java_info"), InlineKeyboardButton(t['btn_ai'], callback_data="ai_start")],
-        [InlineKeyboardButton('🌐 Video va ovoz tarjimoni', callback_data='translate_start')],
-        [InlineKeyboardButton(t['btn_arch'], callback_data="arch_info"), InlineKeyboardButton(t['btn_apk'], callback_data="send_apk")],
-        [InlineKeyboardButton(t['btn_security'], callback_data="sec_start"), InlineKeyboardButton(t['btn_scripts'], callback_data="script_menu")],
-        [InlineKeyboardButton(t['btn_files'], callback_data="files_menu"), InlineKeyboardButton(t['btn_theme'], callback_data="theme_menu")],
-        [InlineKeyboardButton(t['btn_cheatsheet'], callback_data="cheatsheet")],
-        [InlineKeyboardButton(t['btn_challenge'], callback_data="challenge_start"), InlineKeyboardButton(t['btn_quiz'], callback_data="quiz_start")],
-        [InlineKeyboardButton(t['btn_top'], callback_data="top_users"), InlineKeyboardButton(t['btn_premium'], callback_data="premium_menu")],
-        [InlineKeyboardButton(t['btn_profile'], callback_data="my_profile"), InlineKeyboardButton(t['streak_btn'], callback_data="daily_bonus")],
-        [InlineKeyboardButton(t['btn_devtools'], callback_data="devtools_menu"), InlineKeyboardButton(t['btn_tip'], callback_data="daily_tip")],
-        [InlineKeyboardButton(t['btn_updates'], callback_data="updates_menu"), InlineKeyboardButton(t['btn_change_lang'], callback_data="change_lang")],
-        [InlineKeyboardButton(t['btn_support'], callback_data="support_start"), InlineKeyboardButton(t['btn_screenshot'], callback_data="screenshot_start")]
+        [main_menu_button(t['btn_termux'], "page_1", "termux"), main_menu_button(t['btn_lua'], "lua_page_1", "lua")],
+        [main_menu_button(t['btn_java'], "java_info", "java"), main_menu_button(t['btn_ai'], "ai_start", "ai")],
+        [main_menu_button('🌐 Video va ovoz tarjimoni', 'translate_start', 'translate')],
+        [main_menu_button(t['btn_arch'], "arch_info", "arch"), main_menu_button(t['btn_apk'], "send_apk", "apk")],
+        [main_menu_button(t['btn_security'], "sec_start", "security"), main_menu_button(t['btn_scripts'], "script_menu", "scripts")],
+        [main_menu_button(t['btn_files'], "files_menu", "files"), main_menu_button(t['btn_theme'], "theme_menu", "theme")],
+        [main_menu_button(t['btn_cheatsheet'], "cheatsheet", "cheatsheet")],
+        [main_menu_button(t['btn_challenge'], "challenge_start", "challenge"), main_menu_button(t['btn_quiz'], "quiz_start", "quiz")],
+        [main_menu_button(t['btn_top'], "top_users", "top"), main_menu_button(t['btn_premium'], "premium_menu", "premium")],
+        [main_menu_button(t['btn_profile'], "my_profile", "profile"), main_menu_button(t['streak_btn'], "daily_bonus", "streak")],
+        [main_menu_button(t['btn_devtools'], "devtools_menu", "devtools"), main_menu_button(t['btn_tip'], "daily_tip", "tip")],
+        [main_menu_button(t['btn_updates'], "updates_menu", "updates"), main_menu_button(t['btn_change_lang'], "change_lang", "language")],
+        [main_menu_button(t['btn_support'], "support_start", "support"), main_menu_button(t['btn_screenshot'], "screenshot_start", "screenshot")]
     ]
     if user_id == ADMIN_ID:
-        keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")])
+        keyboard.append([main_menu_button("👑 Admin Panel", "admin_menu", "admin")])
     return InlineKeyboardMarkup(keyboard)
 
 def get_theme_keyboard(lang):
