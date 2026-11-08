@@ -52,6 +52,12 @@ TELEGRAM_API_BASE_URL = os.environ.get("TELEGRAM_API_BASE_URL")
 TELEGRAM_FILE_BASE_URL = os.environ.get("TELEGRAM_FILE_BASE_URL")
 TRANSLATION_GEMINI_MODEL = os.environ.get("TRANSLATION_GEMINI_MODEL", "gemini-3.8-flash")
 TRANSLATION_TTS_MODEL = os.environ.get("TRANSLATION_TTS_MODEL", "gemini-3.8-flash-tts")
+TRANSLATION_GROQ_MODEL = os.environ.get("TRANSLATION_GROQ_MODEL", "openai/gpt-oss-120b")
+TRANSLATION_MISTRAL_MODEL = os.environ.get("TRANSLATION_MISTRAL_MODEL", "mistral-large-latest")
+TRANSLATION_OPENROUTER_MODEL = os.environ.get("TRANSLATION_OPENROUTER_MODEL", "qwen/qwen3-235b-a22b-2507")
+TRANSLATION_GROQ_ASR_MODEL = os.environ.get("TRANSLATION_GROQ_ASR_MODEL", "whisper-large-v3")
+TRANSLATION_MISTRAL_ASR_MODEL = os.environ.get("TRANSLATION_MISTRAL_ASR_MODEL", "voxtral-mini-transcribe-3")
+TRANSLATION_OPENROUTER_ASR_MODEL = os.environ.get("TRANSLATION_OPENROUTER_ASR_MODEL", "google/gemini-3.5-transcribe")
 TRANSLATION_MAX_MEDIA_BYTES = max(1, min(int(os.environ.get("TRANSLATION_MAX_MEDIA_MB", "20")), 2000)) * 1024 * 1024
 TRANSLATION_MAX_OUTPUT_BYTES = max(1, min(int(os.environ.get("TRANSLATION_MAX_OUTPUT_MB", "49")), 2000)) * 1024 * 1024
 try:
@@ -1143,6 +1149,12 @@ TRANSLATION_LANGUAGES = {
     'hi': '🇮🇳 हिन्दी', 'ko': '🇰🇷 한국어', 'ja': '🇯🇵 日本語',
     'de': '🇩🇪 Deutsch', 'fr': '🇫🇷 Français', 'es': '🇪🇸 Español'
 }
+TRANSLATION_LANGUAGE_NAMES = {
+    'uz': 'Uzbek (Latin alphabet)', 'en': 'English', 'ru': 'Russian',
+    'tr': 'Turkish', 'ar': 'Arabic', 'zh': 'Chinese (Mandarin)',
+    'hi': 'Hindi', 'ko': 'Korean', 'ja': 'Japanese', 'de': 'German',
+    'fr': 'French', 'es': 'Spanish'
+}
 
 def get_translation_language_keyboard():
     items = list(TRANSLATION_LANGUAGES.items())
@@ -1152,6 +1164,7 @@ def get_translation_language_keyboard():
             InlineKeyboardButton(name, callback_data=f'translate_lang_{code}')
             for code, name in items[i:i + 2]
         ])
+    rows.append([InlineKeyboardButton('🌍 Boshqa til — nomini yozish', callback_data='translate_custom_lang')])
     rows.append([InlineKeyboardButton('🏠 Bosh menyu', callback_data='back_to_start')])
     return InlineKeyboardMarkup(rows)
 
@@ -1176,7 +1189,7 @@ def get_main_menu(lang, user_id):
     keyboard = [
         [main_menu_button(t['btn_termux'], "page_1", "termux"), main_menu_button(t['btn_lua'], "lua_page_1", "lua")],
         [main_menu_button(t['btn_java'], "java_info", "java"), main_menu_button(t['btn_ai'], "ai_start", "ai")],
-        [main_menu_button('🌐 Video va ovoz tarjimoni', 'translate_start', 'translate')],
+        [main_menu_button('🎙 Ovozli xabar tarjimasi', 'translate_start', 'translate')],
         [main_menu_button(t['btn_arch'], "arch_info", "arch"), main_menu_button(t['btn_apk'], "send_apk", "apk")],
         [main_menu_button(t['btn_security'], "sec_start", "security"), main_menu_button(t['btn_scripts'], "script_menu", "scripts")],
         [main_menu_button(t['btn_files'], "files_menu", "files"), main_menu_button(t['btn_theme'], "theme_menu", "theme")],
@@ -1882,20 +1895,30 @@ async def button_tap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == 'translate_start':
         context.user_data['state'] = None
+        context.user_data.pop('translation_target', None)
+        context.user_data.pop('translation_target_name', None)
         await edit_or_send(
             query, context,
-            '🌐 **Video va ovoz tarjimoni**\n\nTarjima qilinadigan tilni tanlang. Keyin ovozli xabar, audio yoki video yuboring. Bot nutqni matnga aylantirib tarjima qiladi va yangi sun’iy ovozda audio qaytaradi. Videoda ko‘rinadigan sahnalarni tahlil qilib, asl ovoz o‘rniga tarjima ovozi qo‘yilgan MP4 tayyorlaydi. Sun’iy ovoz asl gapiruvchining aynan o‘zi bo‘lmaydi.',
+            '🎙 **Ovozli xabar tarjimoni**\n\nTarjima qilinadigan tilni tanlang. Keyin Telegram’ning ovozli xabarini yuboring. Bot nutqni avtomatik aniqlab matnga ko‘chiradi, tanlangan tilga tarjima qiladi va tarjima matnini hamda mavjud bo‘lsa sun’iy audio javobni yuboradi. Video va oddiy audio fayllar bu rejimda qabul qilinmaydi.\n\nRo‘yxatda yo‘q til uchun “Boshqa til”ni bosib, til nomini yozing.',
             get_translation_language_keyboard()
+        )
+    elif data == 'translate_custom_lang':
+        context.user_data['state'] = 'await_translation_language'
+        await edit_or_send(
+            query, context,
+            '🌍 Tarjima qilinadigan til nomini yozing. Masalan: Swahili, Bengali, Italian, Amharic yoki Uzbek (Latin).',
+            InlineKeyboardMarkup([[InlineKeyboardButton('⬅️ Til tanlashga qaytish', callback_data='translate_start')]])
         )
     elif data.startswith('translate_lang_'):
         target_code = data.rsplit('_', 1)[1]
         if target_code not in TRANSLATION_LANGUAGES:
             return await query.answer('Til tanilmadi.', show_alert=True)
-        context.user_data['state'] = 'in_media_translate'
+        context.user_data['state'] = 'in_voice_translate'
         context.user_data['translation_target'] = target_code
+        context.user_data['translation_target_name'] = TRANSLATION_LANGUAGE_NAMES[target_code]
         await edit_or_send(
             query, context,
-            f"✅ **Tanlangan til:** {TRANSLATION_LANGUAGES[target_code]}\n\nEndi voice, audio, video yoki video-xabar yuboring. Nutq aniqlanib to‘liq tarjima qilinadi va tarjima matnidan sun’iy ovoz yaratiladi. Video uchun sahna tahlili hamda tarjima ovozi qo‘yilgan yangi MP4 tayyorlanadi. Asl gapiruvchining ovozi ko‘chirilmaydi.\n\nBoshqa tilni tanlash yoki chiqish mumkin.",
+            f"✅ **Tanlangan til:** {TRANSLATION_LANGUAGES[target_code]}\n\nEndi Telegram ovozli xabarini yuboring. Bot avval transkripsiya qiladi, so‘ng to‘liq tarjima va, xizmat qo‘llasa, tarjima audio javobini chiqaradi. Boshqa tilni tanlash yoki menyuga qaytish mumkin.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton('🌐 Tilni almashtirish', callback_data='translate_start')],
                 [InlineKeyboardButton(t['btn_back'], callback_data='back_to_start')]
@@ -2290,7 +2313,9 @@ def split_translation_text(text, max_chars=2600):
 
 def compact_api_error(exc, max_chars=350):
     """Return a short provider error detail without exposing common API-key formats."""
-    text = re.sub(r'AIza[0-9A-Za-z_-]{20,}', '[API kalit yashirildi]', str(exc or 'Noma’lum xato'))
+    text = str(exc or 'Noma’lum xato')
+    text = re.sub(r'AIza[0-9A-Za-z_-]{20,}|sk-or-v1-[0-9A-Za-z_-]{16,}|gsk_[0-9A-Za-z_-]{16,}|sk-[0-9A-Za-z_-]{16,}', '[API kalit yashirildi]', text)
+    text = re.sub(r'(?i)(bearer\s+)[A-Za-z0-9._-]{12,}', r'\1[API kalit yashirildi]', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text[:max_chars] or type(exc).__name__
 
@@ -2308,53 +2333,118 @@ def uzbek_cyrillic_to_latin(text):
     }
     return ''.join(mapping.get(char, char) for char in str(text or ''))
 
-async def transcribe_audio_bytes(audio_bytes, filename, mime_type):
-    """Transcribe speech with Whisper when configured, then fall back to Gemini audio."""
-    errors = []
-    if groq_client:
-        try:
-            result = await asyncio.wait_for(
-                groq_client.audio.transcriptions.create(
-                    model='whisper-large-v3-turbo',
-                    file=(filename, audio_bytes),
-                    response_format='text',
-                    temperature=0
-                ), timeout=300
-            )
-            text = result if isinstance(result, str) else getattr(result, 'text', '')
-            if text and text.strip():
-                return text.strip()
-            errors.append('Whisper bo‘sh transkript qaytardi')
-        except Exception as exc:
-            errors.append(f'Whisper: {type(exc).__name__}')
-            logging.exception('Whisper transkripsiya xatosi')
-    if gemini_client:
-        try:
-            result = await asyncio.wait_for(
-                gemini_client.aio.models.generate_content(
-                    model=TRANSLATION_GEMINI_MODEL,
-                    contents=[
-                        types.Part.from_text(text=(
-                            'Transcribe all audible speech verbatim in its original language. '
-                            'Do not translate, summarize, or omit repeated speech. Mark genuinely '
-                            'unintelligible words as [inaudible]. Return only the transcript.'
-                        )),
-                        types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
-                    ]
-                ), timeout=300
-            )
-            text = (getattr(result, 'text', '') or '').strip()
-            if text:
-                return text
-            errors.append('Gemini bo‘sh transkript qaytardi')
-        except Exception as exc:
-            errors.append(f'Gemini audio: {type(exc).__name__}')
-            logging.exception('Gemini audio transkripsiya xatosi')
-    raise RuntimeError('; '.join(errors) or 'Ovoz transkripsiyasi uchun GROQ_API_KEY yoki GEMINI_API_KEY kerak')
+def extract_transcript_text(result):
+    """Read a transcript from OpenAI-compatible SDK responses or plain text results."""
+    if isinstance(result, str):
+        return result.strip()
+    if isinstance(result, dict):
+        return str(result.get('text') or result.get('transcript') or result.get('output_text') or '').strip()
+    return str(getattr(result, 'text', '') or getattr(result, 'transcript', '') or getattr(result, 'output_text', '') or '').strip()
 
-async def translate_transcript(text, target_code):
-    """Translate every transcript chunk, falling back across configured text providers."""
-    target_name = TRANSLATION_LANGUAGES[target_code]
+async def transcribe_audio_bytes(audio_bytes, filename, mime_type):
+    """Try each configured multilingual speech-recognition provider in order."""
+    errors = []
+    attempts = []
+    if groq_client:
+        attempts.extend([
+            ('Groq Whisper Large v3', lambda model=TRANSLATION_GROQ_ASR_MODEL: groq_client.audio.transcriptions.create(
+                model=model, file=(filename, audio_bytes), response_format='text', temperature=0)),
+            ('Groq Whisper Turbo fallback', lambda: groq_client.audio.transcriptions.create(
+                model='whisper-large-v3-turbo', file=(filename, audio_bytes), response_format='text', temperature=0))
+        ])
+    if mistral_client:
+        attempts.append(('Mistral Voxtral', lambda: mistral_client.audio.transcriptions.create(
+            model=TRANSLATION_MISTRAL_ASR_MODEL, file=(filename, audio_bytes))))
+    if openrouter_client:
+        attempts.append(('OpenRouter STT', lambda: openrouter_client.audio.transcriptions.create(
+            model=TRANSLATION_OPENROUTER_ASR_MODEL, file=(filename, audio_bytes),
+            response_format='json', temperature=0)))
+    if gemini_client:
+        async def gemini_transcribe():
+            prompt = (
+                'Transcribe every audible spoken word verbatim in the original language. '
+                'Do not translate, summarize, or omit repetitions. Do not guess unclear words; '
+                'mark only genuinely unintelligible speech as [inaudible]. Return only the transcript.'
+            )
+            interactions = getattr(gemini_client.aio, 'interactions', None)
+            uploaded = None
+            if interactions:
+                try:
+                    if len(audio_bytes) < 14 * 1024 * 1024:
+                        interaction = await interactions.create(
+                            model=TRANSLATION_GEMINI_MODEL,
+                            input=[
+                                {'type': 'text', 'text': prompt},
+                                {'type': 'audio', 'data': base64.b64encode(audio_bytes).decode('ascii'),
+                                 'mime_type': mime_type}
+                            ]
+                        )
+                    else:
+                        with tempfile.TemporaryDirectory(prefix='gemini_voice_') as workdir:
+                            suffix = os.path.splitext(filename)[1] or '.ogg'
+                            path = os.path.join(workdir, 'voice' + suffix)
+                            with open(path, 'wb') as audio_file:
+                                audio_file.write(audio_bytes)
+                            upload_method = getattr(gemini_client.files, 'upload', None)
+                            if not upload_method:
+                                raise RuntimeError('Gemini Files API bu SDK versiyasida mavjud emas')
+                            uploaded = await asyncio.to_thread(upload_method, file=path)
+                            deadline = time.monotonic() + 240
+                            state = getattr(getattr(uploaded, 'state', None), 'name', None)
+                            while state and state.upper() not in ('ACTIVE', 'SUCCEEDED'):
+                                if state.upper() in ('FAILED', 'ERROR') or time.monotonic() >= deadline:
+                                    raise RuntimeError(f'Gemini audio fayli tayyor bo‘lmadi: {state}')
+                                await asyncio.sleep(3)
+                                uploaded = await asyncio.to_thread(gemini_client.files.get, name=uploaded.name)
+                                state = getattr(getattr(uploaded, 'state', None), 'name', None)
+                            interaction = await interactions.create(
+                                model=TRANSLATION_GEMINI_MODEL,
+                                input=[
+                                    {'type': 'text', 'text': prompt},
+                                    {'type': 'audio', 'uri': uploaded.uri,
+                                     'mime_type': getattr(uploaded, 'mime_type', None) or mime_type}
+                                ]
+                            )
+                    if extract_transcript_text(interaction):
+                        return interaction
+                except Exception:
+                    logging.exception('Gemini Interactions audio transcription failed; trying GenerateContent')
+                finally:
+                    if uploaded and getattr(uploaded, 'name', None):
+                        try:
+                            delete_method = getattr(gemini_client.files, 'delete', None)
+                            if delete_method:
+                                await asyncio.to_thread(delete_method, name=uploaded.name)
+                        except Exception:
+                            logging.warning('Temporary Gemini voice file cleanup failed', exc_info=True)
+            return await gemini_client.aio.models.generate_content(
+                model=TRANSLATION_GEMINI_MODEL,
+                contents=[types.Part.from_text(text=prompt),
+                          types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)]
+            )
+        attempts.append(('Gemini audio', gemini_transcribe))
+
+    for provider_name, call in attempts:
+        try:
+            result = await asyncio.wait_for(call(), timeout=300)
+            transcript = extract_transcript_text(result)
+            if transcript:
+                logging.info('Voice transcription succeeded with %s', provider_name)
+                return transcript
+            errors.append(f'{provider_name}: bo‘sh transkript')
+        except Exception as exc:
+            safe_error = compact_api_error(exc, max_chars=240)
+            errors.append(f'{provider_name}: {safe_error}')
+            logging.warning('%s voice transcription failed: %s', provider_name, safe_error)
+    raise RuntimeError(
+        '; '.join(errors) if errors else
+        'Ovoz transkripsiyasi uchun GROQ_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY yoki GEMINI_API_KEY kerak'
+    )
+
+async def translate_transcript(text, target_code, target_name=None):
+    """Translate every chunk, falling through all configured text-AI providers."""
+    target_name = target_name or TRANSLATION_LANGUAGE_NAMES.get(target_code) or TRANSLATION_LANGUAGES.get(target_code, target_code)
+    is_uzbek = target_code == 'uz' or 'uzbek' in target_name.casefold() or 'o‘zbek' in target_name.casefold()
     translated_chunks = []
     for index, chunk in enumerate(split_translation_text(text), start=1):
         system_prompt = (
@@ -2363,61 +2453,45 @@ async def translate_transcript(text, target_code):
             'Do not summarize, censor, add commentary, or omit repetitions. If the source marks '
             'a word [inaudible], translate that marker naturally. Output only the translation.'
         )
-        if target_code == 'uz':
+        if is_uzbek:
             system_prompt += ' Write Uzbek only in the Latin alphabet; do not use Cyrillic Uzbek.'
         errors = []
         translated = ''
+        chat_messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': chunk}]
+        providers = []
         if groq_client:
+            providers.append(('Groq', lambda: groq_client.chat.completions.create(
+                model=TRANSLATION_GROQ_MODEL, messages=chat_messages, temperature=0.1, max_tokens=4000)))
+        if mistral_client:
+            providers.append(('Mistral', lambda: mistral_client.chat.completions.create(
+                model=TRANSLATION_MISTRAL_MODEL, messages=chat_messages, temperature=0.1, max_tokens=4000)))
+        if openrouter_client:
+            providers.append(('OpenRouter', lambda: openrouter_client.chat.completions.create(
+                model=TRANSLATION_OPENROUTER_MODEL, messages=chat_messages, temperature=0.1, max_tokens=4000)))
+        if gemini_client:
+            providers.append(('Gemini', lambda: gemini_client.aio.models.generate_content(
+                model=TRANSLATION_GEMINI_MODEL, contents=f'{system_prompt}\n\nTranscript:\n{chunk}')))
+
+        for provider_name, call in providers:
             try:
-                response = await asyncio.wait_for(groq_client.chat.completions.create(
-                    model='llama-3.3-70b-versatile',
-                    messages=[{'role': 'system', 'content': system_prompt},
-                              {'role': 'user', 'content': chunk}],
-                    temperature=0.1, max_tokens=4000
-                ), timeout=180)
-                translated = (response.choices[0].message.content or '').strip()
+                response = await asyncio.wait_for(call(), timeout=180)
+                if provider_name == 'Gemini':
+                    candidate = getattr(response, 'text', '') or ''
+                else:
+                    candidate = response.choices[0].message.content or ''
+                translated = candidate.strip()
+                if translated:
+                    break
+                errors.append(f'{provider_name}: bo‘sh tarjima')
             except Exception as exc:
-                errors.append(f'Groq: {type(exc).__name__}')
-                logging.exception('Groq tarjima xatosi')
-        if not translated and mistral_client:
-            try:
-                response = await asyncio.wait_for(mistral_client.chat.completions.create(
-                    model='mistral-large-latest',
-                    messages=[{'role': 'system', 'content': system_prompt},
-                              {'role': 'user', 'content': chunk}],
-                    temperature=0.1, max_tokens=4000
-                ), timeout=180)
-                translated = (response.choices[0].message.content or '').strip()
-            except Exception as exc:
-                errors.append(f'Mistral: {type(exc).__name__}')
-                logging.exception('Mistral tarjima xatosi')
-        if not translated and openrouter_client:
-            try:
-                response = await asyncio.wait_for(openrouter_client.chat.completions.create(
-                    model='qwen/qwen-2.5-72b-instruct',
-                    messages=[{'role': 'system', 'content': system_prompt},
-                              {'role': 'user', 'content': chunk}],
-                    temperature=0.1, max_tokens=4000
-                ), timeout=180)
-                translated = (response.choices[0].message.content or '').strip()
-            except Exception as exc:
-                errors.append(f'OpenRouter: {type(exc).__name__}')
-                logging.exception('OpenRouter tarjima xatosi')
-        if not translated and gemini_client:
-            try:
-                response = await asyncio.wait_for(gemini_client.aio.models.generate_content(
-                    model=TRANSLATION_GEMINI_MODEL,
-                    contents=f'{system_prompt}\n\nTranscript:\n{chunk}'
-                ), timeout=180)
-                translated = (getattr(response, 'text', '') or '').strip()
-            except Exception as exc:
-                errors.append(f'Gemini: {type(exc).__name__}')
-                logging.exception('Gemini tarjima xatosi')
+                safe_error = compact_api_error(exc, max_chars=240)
+                errors.append(f'{provider_name}: {safe_error}')
+                logging.warning('%s translation failed: %s', provider_name, safe_error)
         if not translated:
             raise RuntimeError(f'{index}-qism tarjima qilinmadi. ' + ', '.join(errors))
         translated_chunks.append(translated)
     result = '\n'.join(translated_chunks)
-    if target_code == 'uz':
+    if is_uzbek:
         result = uzbek_cyrillic_to_latin(result)
     return result
 
@@ -2774,13 +2848,17 @@ def get_translation_media(message):
 async def handle_media_translation(update, context):
     user_id = update.effective_user.id
     target_code = context.user_data.get('translation_target')
+    target_name = context.user_data.get('translation_target_name') or TRANSLATION_LANGUAGE_NAMES.get(target_code)
+    target_display = TRANSLATION_LANGUAGES.get(target_code, target_name or 'Tanlangan til')
     message = update.message
-    if target_code not in TRANSLATION_LANGUAGES:
+    if not target_name or (target_code not in TRANSLATION_LANGUAGES and target_code != 'custom'):
         context.user_data['state'] = None
-        return await message.reply_text('⚠️ Avval tarjima tilini tanlang: Menyu → Video va ovoz tarjimoni.')
-    media, kind, filename, mime_type = get_translation_media(message)
+        return await message.reply_text('⚠️ Avval tarjima tilini tanlang: Menyu → Ovozli xabar tarjimasi.')
+    if not message.voice:
+        return await message.reply_text('🎙 Bu rejim faqat Telegram ovozli xabarlarini qabul qiladi. Video, oddiy audio fayl va boshqa fayllar qabul qilinmaydi.')
+    media, _kind, filename, mime_type = get_translation_media(message)
     if not media:
-        return await message.reply_text('🎙 Iltimos, ovozli xabar, audio, video yoki video hujjat yuboring. Tilni almashtirish uchun tarjimon menyusini oching.')
+        return await message.reply_text('⚠️ Ovozli xabarni o‘qib bo‘lmadi. Iltimos, qayta yuboring.')
     file_size = getattr(media, 'file_size', None) or 0
     if file_size > TRANSLATION_MAX_MEDIA_BYTES:
         max_mb = TRANSLATION_MAX_MEDIA_BYTES // (1024 * 1024)
@@ -2788,12 +2866,12 @@ async def handle_media_translation(update, context):
             f'⚠️ Fayl limitdan katta ({max_mb} MB). Standart Telegram Bot API faylni 20 MB gacha yuklab beradi. '
             'Kattaroq fayllar uchun bot egasi Local Bot API server sozlashi kerak.'
         )
-    if not any([groq_client, gemini_client]):
-        return await message.reply_text('❌ Tarjima xizmati sozlanmagan. GROQ_API_KEY yoki GEMINI_API_KEY kerak.')
+    if not any([groq_client, mistral_client, openrouter_client, gemini_client]):
+        return await message.reply_text('❌ AI xizmatlari sozlanmagan. GROQ_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY yoki GEMINI_API_KEY dan kamida bittasini sozlang.')
     allowed, left = await check_ai_limit(user_id, consume=True)
     if not allowed:
         return await message.reply_text(TEXTS[context.user_data.get('lang', 'uz')]['ai_limit_reached'])
-    status = await message.reply_text('⏳ Media yuklanmoqda va tahlil qilinmoqda...')
+    status = await message.reply_text('⏳ Ovozli xabar yuklanmoqda va nutq aniqlanmoqda...')
     try:
         telegram_file = await media.get_file()
         raw = bytes(await telegram_file.download_as_bytearray())
@@ -2803,44 +2881,26 @@ async def handle_media_translation(update, context):
                 f'⚠️ Fayl hajmi {max_mb} MB limitdan oshdi. Kattaroq fayllar uchun Local Bot API server kerak.'
             )
             return
-        transcript = ''
-        visual_report = None
-        if kind == 'audio':
-            transcript = await transcribe_audio_bytes(raw, filename, mime_type)
-        else:
-            visual_task = asyncio.create_task(analyze_video_visuals(raw, filename, target_code))
-            try:
-                audio_bytes = await extract_video_audio(raw, filename)
-                if audio_bytes:
-                    transcript = await transcribe_audio_bytes(audio_bytes, 'video_audio.mp3', 'audio/mpeg')
-            except Exception:
-                logging.exception('Videodan audio ajratish xatosi; Gemini fallback ishlatiladi')
-                visual_task.cancel()
-                await asyncio.gather(visual_task, return_exceptions=True)
-                direct_report = await direct_video_translation_report(raw, filename, target_code)
-                if direct_report:
-                    await status.delete()
-                    await send_long_message(context.bot, message.chat_id,
-                        f'🌐 {TRANSLATION_LANGUAGES[target_code]} tarjima va video tahlili\n\n{direct_report}')
-                    return
-                raise RuntimeError('Videoni tahlil qilish uchun ffmpeg va Gemini xizmatlari kerak bo‘ldi, lekin zaxira tahlil ham bajarilmadi.')
-            if transcript:
-                visual_report = await visual_task
-            else:
-                visual_report = await visual_task
+        transcript = await transcribe_audio_bytes(raw, filename, mime_type)
         if transcript:
-            await status.edit_text('📝 Nutq to‘liq transkripsiya qilindi. Tarjima tayyorlanmoqda...')
-            translated = await translate_transcript(transcript, target_code)
+            await status.edit_text('📝 Ovoz matnga ko‘chirildi. Tarjima tayyorlanmoqda...')
+            try:
+                translated = await translate_transcript(transcript, target_code, target_name)
+            except Exception as translation_exc:
+                logging.exception('Ovoz transkripsiyasi tayyor, lekin tarjima xato berdi')
+                await send_long_message(
+                    context.bot, message.chat_id,
+                    f'🌐 Maqsad til: {target_display}\n\n'
+                    f'📝 Asl nutq transkripsiyasi:\n{transcript}\n\n'
+                    f'⚠️ Tarjima bajarilmadi: {compact_api_error(translation_exc, max_chars=700)}'
+                )
+                await status.edit_text('⚠️ Transkripsiya yuborildi, ammo tarjima provayderlari xato qaytardi. API kalitlari, model ruxsati yoki billingni tekshiring.')
+                return
             sections = [
-                f'🌐 Maqsad til: {TRANSLATION_LANGUAGES[target_code]}',
+                f'🌐 Maqsad til: {target_display}',
                 '📝 Asl nutq transkripsiyasi:\n' + transcript,
                 '🔤 To‘liq tarjima:\n' + translated
             ]
-            if kind == 'video':
-                if visual_report:
-                    sections.append('🎬 Video vizual tahlili:\n' + visual_report)
-                else:
-                    sections.append('🎬 Video vizual tahlili hozir mavjud emas; nutq transkripsiyasi va tarjimasi tayyor.')
             await send_long_message(context.bot, message.chat_id, '\n\n'.join(sections))
             try:
                 await status.edit_text('🔊 Tarjima qilingan ovoz yaratilmoqda...')
@@ -2862,31 +2922,17 @@ async def handle_media_translation(update, context):
                     voice_file.name = 'translated_voice.ogg'
                     await context.bot.send_voice(
                         chat_id=message.chat_id, voice=voice_file,
-                        caption=f'🔊 {TRANSLATION_LANGUAGES[target_code]} — tarjima ovozi'
+                        caption=f'🔊 {target_display} — tarjima ovozi'
                     )
                 else:
                     voice_file.name = 'translated_voice.wav'
                     await context.bot.send_document(
                         chat_id=message.chat_id, document=voice_file,
-                        caption=f'🔊 {TRANSLATION_LANGUAGES[target_code]} — tarjima audio fayli'
-                    )
-                if kind == 'video':
-                    await status.edit_text('🎬 Tarjima ovozi videoga qo‘shilmoqda...')
-                    dubbed_video = await mux_translated_audio_into_video(raw, filename, translated_wav)
-                    if len(dubbed_video) > TRANSLATION_MAX_OUTPUT_BYTES:
-                        raise RuntimeError(
-                            f'Tarjima qilingan video {len(dubbed_video) / 1024 / 1024:.1f} MB bo‘ldi; '
-                            f'joriy chiqish limiti {TRANSLATION_MAX_OUTPUT_BYTES // (1024 * 1024)} MB.'
-                        )
-                    video_file = BytesIO(dubbed_video)
-                    video_file.name = 'translated_video.mp4'
-                    await context.bot.send_video(
-                        chat_id=message.chat_id, video=video_file,
-                        caption=f'🎬 {TRANSLATION_LANGUAGES[target_code]} — tarjima ovozli video'
+                        caption=f'🔊 {target_display} — tarjima audio fayli'
                     )
                 await status.delete()
             except Exception as speech_exc:
-                logging.exception('Tarjima qilingan audio/video chiqishini tayyorlashda xato')
+                logging.exception('Tarjima qilingan ovoz faylini tayyorlashda xato')
                 try:
                     detail = compact_api_error(speech_exc, max_chars=1100)
                     lowered = detail.lower()
@@ -2896,25 +2942,22 @@ async def handle_media_translation(update, context):
                     elif 'ffmpeg' in lowered or 'video yig‘ilmadi' in lowered or 'codec' in lowered:
                         advice = 'Serverda ffmpeg va libx264/libopus codec o‘rnatilganini tekshiring.'
                     else:
-                        advice = 'Telegram fayl yuborish limiti va server logini tekshiring.'
+                        advice = 'Gemini TTS xizmati, TTS model ruxsati, API billing yoki Telegram yuborish limitini tekshiring.'
                     await status.edit_text(
-                        'Matnli transkript va tarjima tayyor, lekin audio/video fayl yaratilmadi.\n'
+                        'Matnli transkript va tarjima yuborildi, lekin tarjima ovozi yaratilmadi.\n'
                         f'Qaytgan xato: {detail}\n{advice}'
                     )
                 except Exception:
                     pass
-        elif kind == 'video' and visual_report:
-            await status.delete()
-            await send_long_message(context.bot, message.chat_id,
-                f'🌐 {TRANSLATION_LANGUAGES[target_code]}\n\n🎬 Video tasvirida nutq aniqlanmadi. Vizual tahlil:\n{visual_report}')
         else:
-            await status.edit_text('⚠️ Ovoz aniqlanmadi yoki tushunarsiz bo‘ldi. Tiniqroq/ovoz balandroq media yuboring.')
+            await status.edit_text('⚠️ Ovoz aniqlanmadi yoki tushunarsiz bo‘ldi. Tiniqroq va balandroq ovozli xabar yuboring.')
     except Exception as exc:
-        logging.exception('Video/ovoz tarjimasi bajarilmadi')
+        logging.exception('Ovozli xabar tarjimasi bajarilmadi')
         try:
+            detail = compact_api_error(exc, max_chars=800)
             await status.edit_text(
-                f'❌ Media tarjima qilinmadi ({type(exc).__name__}). Boshqa fayl bilan qayta urinib ko‘ring; '
-                'video tahlili uchun Gemini API, nutqni transkripsiya qilish uchun GROQ_API_KEY yoki GEMINI_API_KEY talab qilinadi.'
+                f'❌ Ovozli xabar tarjima qilinmadi. Sabab: {detail}\n\n'
+                'Boshqa ovozli xabar bilan qayta urinib ko‘ring. Groq, Mistral, OpenRouter yoki Gemini API kalitlaridan biri sozlangan bo‘lishi kerak.'
             )
         except Exception:
             pass
@@ -3318,7 +3361,29 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-    if context.user_data.get('state') == 'in_media_translate':
+    if context.user_data.get('state') == 'await_translation_language':
+        requested_language = (update.message.text or '').strip()
+        valid_language = (
+            2 <= len(requested_language) <= 60
+            and any(character.isalpha() for character in requested_language)
+            and all(character.isalpha() or character.isspace() or character in "-_'’()." for character in requested_language)
+        )
+        if not valid_language:
+            await update.message.reply_text('Til nomini 2–60 belgi bilan yozing. Masalan: Swahili, Bengali yoki Italian.')
+            return
+        context.user_data['translation_target'] = 'custom'
+        context.user_data['translation_target_name'] = requested_language
+        context.user_data['state'] = 'in_voice_translate'
+        await update.message.reply_text(
+            f'✅ Maqsad til: {requested_language}\n\nEndi Telegram ovozli xabarini yuboring. Video va oddiy audio fayllar qabul qilinmaydi.',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton('🌐 Tilni almashtirish', callback_data='translate_start')],
+                [InlineKeyboardButton(t['btn_back'], callback_data='back_to_start')]
+            ])
+        )
+        return
+
+    if context.user_data.get('state') in ('in_voice_translate', 'in_media_translate'):
         await handle_media_translation(update, context)
         return
 
